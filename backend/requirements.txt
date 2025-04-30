@@ -1,0 +1,14 @@
+Flask
+flask-cors
+openai
+torch
+transformers
+Pillow
+faiss-cpu
+python-dotenv
+requests
+numpy
+pymysql
+SQLAlchemy
+# MySQL connector that doesn't require native compilation
+mysql-connector-python

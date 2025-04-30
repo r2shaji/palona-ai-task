@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: palona-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: palona_shop
+      MYSQL_USER: palona
+      MYSQL_PASSWORD: palonapassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/db/init:/docker-entrypoint-initdb.d
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - palona-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-upalona", "-ppalonapassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: palona-backend
+    restart: always
+    ports:
+      - "5001:5001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=palona
+      - DB_PASSWORD=palonapassword
+      - DB_NAME=palona_shop
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/db:/app/db
+    networks:
+      - palona-network
+
+networks:
+  palona-network:
+    driver: bridge
+
+volumes:
+  mysql_data: 

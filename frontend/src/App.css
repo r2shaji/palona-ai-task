@@ -1,0 +1,358 @@
+/* App.css */
+:root {
+  --primary-color: #00a8e1;
+  --secondary-color: #ff9900;
+  --light-bg: #f8f8f8;
+  --border-color: #e0e0e0;
+  --text-color: #333;
+  --light-text: #666;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: var(--light-bg);
+  color: var(--text-color);
+  margin: 0;
+  padding: 0;
+}
+
+.app {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.app-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.app-header h1 {
+  color: var(--primary-color);
+  font-size: 28px;
+}
+
+/* Chat container */
+.chat-container {
+  background-color: white;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+/* Welcome message */
+.welcome-message {
+  text-align: center;
+  padding: 30px;
+  color: var(--light-text);
+}
+
+.welcome-message h3 {
+  color: var(--primary-color);
+  margin-bottom: 15px;
+}
+
+/* Message styles */
+.message-container {
+  margin-bottom: 24px;
+}
+
+.message {
+  display: inline-block;
+  max-width: 80%;
+  padding: 12px 16px;
+  border-radius: 18px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.message.user {
+  background-color: var(--primary-color);
+  color: white;
+  border-radius: 18px 18px 0 18px;
+  margin-left: auto;
+}
+
+.message.bot {
+  background-color: var(--light-bg);
+  color: var(--text-color);
+  border-radius: 18px 18px 18px 0;
+}
+
+.message-container.user {
+  text-align: right;
+}
+
+.message-container.bot {
+  text-align: left;
+}
+
+/* Message text formatting */
+.message-text p {
+  margin: 0 0 8px 0;
+}
+
+.message-text p:last-child {
+  margin-bottom: 0;
+}
+
+.message-text strong {
+  font-weight: 700;
+  color: inherit;
+  display: inline-block;
+}
+
+.message.bot .message-text strong {
+  color: var(--primary-color);
+  font-weight: 800;
+}
+
+.message-text .list-item {
+  padding-left: 20px;
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.message-text .list-item.numbered {
+  font-weight: 500;
+}
+
+.message-text .list-item.bulleted {
+  font-weight: normal;
+}
+
+.message-text .list-item.bulleted::before {
+  content: "•";
+  position: absolute;
+  left: 5px;
+}
+
+/* Image in message */
+.message-image img {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+
+/* Product recommendations */
+.product-recommendations {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Complementary product header */
+.complementary-header {
+  display: flex;
+  align-items: center;
+  background-color: #f0f7ff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--primary-color);
+}
+
+.complementary-icon {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+.product-card {
+  display: flex;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.product-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.product-image {
+  width: 100px;
+  height: 100px;
+  flex-shrink: 0;
+}
+
+.product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-info {
+  padding: 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.product-info h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+
+.product-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.product-price {
+  font-weight: bold;
+  color: var(--secondary-color);
+}
+
+.product-rating {
+  color: #f0c14b;
+  font-size: 13px;
+}
+
+.view-details {
+  margin-top: auto;
+  color: var(--primary-color);
+  font-size: 13px;
+}
+
+/* Suggested questions */
+.suggested-questions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.suggested-question {
+  background-color: white;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--primary-color);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.suggested-question:hover {
+  background-color: #f0f7ff;
+}
+
+/* Loading indicator */
+.typing-indicator {
+  display: flex;
+  gap: 3px;
+}
+
+.typing-indicator span {
+  width: 8px;
+  height: 8px;
+  background-color: #bbb;
+  border-radius: 50%;
+  display: inline-block;
+  animation: pulse 1.5s infinite;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+/* Chat input */
+.chat-input-container {
+  border-top: 1px solid var(--border-color);
+  padding: 12px;
+  background-color: white;
+}
+
+.chat-input-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-text-input {
+  flex: 1;
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
+  padding: 12px 16px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.chat-text-input:focus {
+  border-color: var(--primary-color);
+}
+
+.image-upload-button,
+.send-button {
+  background: none;
+  border: none;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--primary-color);
+  border-radius: 50%;
+  padding: 0;
+}
+
+.image-upload-button:hover,
+.send-button:hover {
+  background-color: #f0f7ff;
+}
+
+.image-upload-button svg,
+.send-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.send-button:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+  .app {
+    padding: 10px;
+  }
+  
+  .chat-container {
+    border-radius: 15px;
+    height: calc(100vh - 100px);
+  }
+  
+  .product-image {
+    width: 80px;
+    height: 80px;
+  }
+}
