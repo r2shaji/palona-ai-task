@@ -509,18 +509,6 @@ const Chat = () => {
             
             {msg.products && (
               <div className="product-recommendations">
-                {msg.isComplementary && (
-                  <div className="complementary-header">
-                    <span className="complementary-icon">👔👖</span>
-                    <span>
-                      {msg.text.includes('pants') ? 'Items that go well with pants' :
-                       msg.text.includes('shirt') ? 'Items that go well with shirts' :
-                       msg.text.includes('jacket') ? 'Items that go well with jackets' :
-                       msg.text.includes('skirt') ? 'Items that go well with skirts' :
-                       'Complementary items for your outfit'}
-                    </span>
-                  </div>
-                )}
                 {msg.products.length > 0 ? (
                   msg.products.map(product => {
                     // Skip products with missing essential data

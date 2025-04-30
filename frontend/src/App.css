@@ -356,3 +356,18 @@ body {
     height: 80px;
   }
 }
+
+/* Alternative suggestion message */
+.alternative-suggestion {
+  background-color: #FFF8E6;
+  border-left: 3px solid #FFB347;
+  border-radius: 6px;
+  padding: 10px 15px;
+  margin-bottom: 15px;
+  font-size: 14px;
+  color: #5A4A00;
+}
+
+.alternative-suggestion p {
+  margin: 0;
+}
