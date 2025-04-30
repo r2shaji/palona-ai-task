@@ -1,11 +1,8 @@
 // frontend/src/components/Chat.jsx
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { chatWithAgent, searchByImage, getAllProducts, API_URL } from '../api';
 
 const processBoldText = (text) => {
-  // For debugging
-  console.log("Processing text:", text);
-  
   // Try a different approach - manually identify all bold sections
   let result = [];
   let currentText = '';
@@ -53,27 +50,62 @@ const processBoldText = (text) => {
     }
   }
   
-  console.log("Processed result:", result);
-  
   return result.length > 0 ? result : text;
 };
 
+// Memoized message component to prevent unnecessary re-renders
+const MessageText = memo(({ text }) => {
+  return (
+    <div className="message-text">
+      {text.split('\n').map((paragraph, i) => {
+        // Check if line is a numbered list item (1. Text)
+        if (/^\d+\.\s+/.test(paragraph)) {
+          // Process bold text within numbered list items
+          const content = processBoldText(paragraph);
+          return <p key={i} className="list-item numbered">{content}</p>;
+        }
+        // Check if line is a bullet point (• Text or * Text)
+        else if (/^[•\*]\s+/.test(paragraph)) {
+          // Process bold text within bullet list items
+          const content = processBoldText(paragraph);
+          return <p key={i} className="list-item bulleted">{content}</p>;
+        }
+        // Regular paragraph
+        else if (paragraph.trim() !== '') {
+          // Process bold text
+          return <p key={i}>{processBoldText(paragraph)}</p>;
+        }
+        // Empty line
+        return <br key={i} />;
+      })}
+    </div>
+  );
+});
+
 const Chat = () => {
   const [message, setMessage] = useState('');
-  const [debouncedMessage, setDebouncedMessage] = useState('');
   const [conversation, setConversation] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [products, setProducts] = useState([]);
   const [backendConnected, setBackendConnected] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [lastSubmittedMessage, setLastSubmittedMessage] = useState('');
 
   const fileInputRef = useRef(null);
   const chatEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
+  // Add a timestamp to each message to ensure they're unique
+  const generateMsgId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   useEffect(() => {
     const checkBackendConnection = async () => {
+      // Skip connection check if already sending or loading
+      if (loading || isSending) {
+        return;
+      }
+
       try {
         // Try to fetch products with a timeout
         const timeoutPromise = new Promise((_, reject) => {
@@ -86,55 +118,41 @@ const Chat = () => {
         console.error('Backend connection check failed:', error);
         setBackendConnected(false);
         
-        // Add error message to conversation
-        setConversation(prev => [...prev, {
-          text: "Sorry, I'm having trouble connecting to the server right now. Please try again later.",
-          sender: 'bot',
-          type: 'error'
-        }]);
+        // Only add error message if not already sending/loading
+        if (!loading && !isSending) {
+          setConversation(prev => [...prev, {
+            id: generateMsgId(),
+            text: "Sorry, I'm having trouble connecting to the server right now. Please try again later.",
+            sender: 'bot',
+            type: 'error'
+          }]);
+        }
       }
     };
     
-    // Check connection immediately and set up periodic checks
+    // Check connection immediately and set up periodic checks - less frequently
     checkBackendConnection();
-    const intervalId = setInterval(checkBackendConnection, 30000); // Check every 30 seconds
+    const intervalId = setInterval(checkBackendConnection, 60000); // Check every 60 seconds
     
     return () => clearInterval(intervalId); // Cleanup on unmount
-  }, []);
+  }, [loading, isSending]);
 
   // Auto-scroll to bottom when conversation updates
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversation]);
 
-  // Debounce message updates to prevent excessive API calls
-  useEffect(() => {
-    // Clear any existing timeout
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-    
-    // Only update debounced message after user stops typing for 500ms
-    // and only if we're not currently sending a message
-    if (!isSending) {
-      typingTimeoutRef.current = setTimeout(() => {
-        setDebouncedMessage(message);
-      }, 500);
-    }
-    
-    return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-    };
-  }, [message, isSending]);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!message.trim() || isSending) return;
+    
+    // Prevent submission if: empty message, loading, already sending, or duplicate of last message
+    if (!message.trim() || loading || isSending || message.trim() === lastSubmittedMessage) {
+      return;
+    }
     
     // Set sending flag to true to prevent multiple submissions
     setIsSending(true);
+    setLastSubmittedMessage(message.trim());
     
     // Cancel any pending typing timeout
     if (typingTimeoutRef.current) {
@@ -142,8 +160,9 @@ const Chat = () => {
       typingTimeoutRef.current = null;
     }
     
-    // Add user message to conversation
+    // Add user message to conversation with unique ID
     setConversation(prev => [...prev, { 
+      id: generateMsgId(),
       text: message, 
       sender: 'user',
       type: 'text'
@@ -243,6 +262,7 @@ const Chat = () => {
         
         // Add bot response with products
         setConversation(prev => [...prev, { 
+          id: generateMsgId(),
           text: displayText, 
           sender: 'bot',
           type: 'text',
@@ -255,6 +275,7 @@ const Chat = () => {
       } else {
         // Just a regular text response without products
         setConversation(prev => [...prev, { 
+          id: generateMsgId(),
           text: displayText || "I'm not sure I understand. Could you try rephrasing that?", 
           sender: 'bot',
           type: 'text'
@@ -263,6 +284,7 @@ const Chat = () => {
     } catch (error) {
       console.error('Chat error:', error);
       setConversation(prev => [...prev, { 
+        id: generateMsgId(),
         text: 'Sorry, I encountered an error connecting to our AI service. Please try again in a moment.', 
         sender: 'bot',
         type: 'text'
@@ -282,6 +304,7 @@ const Chat = () => {
       const reader = new FileReader();
       reader.onload = (event) => {
         setConversation(prev => [...prev, { 
+          id: generateMsgId(),
           sender: 'user', 
           type: 'image',
           imageUrl: event.target.result,
@@ -311,6 +334,7 @@ const Chat = () => {
         console.log("Image search error:", errorMessage);
         
         setConversation(prev => [...prev, {
+          id: generateMsgId(),
           text: `We couldn't find similar products. We will add this soon!`,
           sender: 'bot',
           type: 'text'
@@ -320,12 +344,14 @@ const Chat = () => {
       
       if (results.results.length === 0) {
         setConversation(prev => [...prev, {
+          id: generateMsgId(),
           text: "We don't have this product right now, but check back with us later!",
           sender: 'bot',
           type: 'text'
         }]);
       } else {
         setConversation(prev => [...prev, { 
+          id: generateMsgId(),
           text: 'Here are some products similar to your image:', 
           sender: 'bot',
           type: 'text',
@@ -338,6 +364,7 @@ const Chat = () => {
     } catch (error) {
       console.error('Image search error:', error);
       setConversation(prev => [...prev, { 
+        id: generateMsgId(),
         text: 'Sorry, I had trouble finding similar products. Our image recognition service might be temporarily unavailable.', 
         sender: 'bot',
         type: 'text'
@@ -473,7 +500,7 @@ const Chat = () => {
         )}
         
         {conversation.map((msg, idx) => (
-          <div key={idx} className={`message-container ${msg.sender}`}>
+          <div key={msg.id} className={`message-container ${msg.sender}`}>
             <div className={`message ${msg.sender}`}>
               {msg.type === 'image' ? (
                 <div className="message-image">
@@ -481,29 +508,7 @@ const Chat = () => {
                   <p>{msg.text}</p>
                 </div>
               ) : (
-                <div className="message-text">
-                  {msg.text.split('\n').map((paragraph, i) => {
-                    // Check if line is a numbered list item (1. Text)
-                    if (/^\d+\.\s+/.test(paragraph)) {
-                      // Process bold text within numbered list items
-                      const content = processBoldText(paragraph);
-                      return <p key={i} className="list-item numbered">{content}</p>;
-                    }
-                    // Check if line is a bullet point (• Text or * Text)
-                    else if (/^[•\*]\s+/.test(paragraph)) {
-                      // Process bold text within bullet list items
-                      const content = processBoldText(paragraph);
-                      return <p key={i} className="list-item bulleted">{content}</p>;
-                    }
-                    // Regular paragraph
-                    else if (paragraph.trim() !== '') {
-                      // Process bold text
-                      return <p key={i}>{processBoldText(paragraph)}</p>;
-                    }
-                    // Empty line
-                    return <br key={i} />;
-                  })}
-                </div>
+                <MessageText text={msg.text} />
               )}
             </div>
             
@@ -554,11 +559,91 @@ const Chat = () => {
               <div className="suggested-questions">
                 {renderSuggestedQuestions().map((question, i) => (
                   <button 
-                    key={i} 
+                    key={`${msg.id}_suggestion_${i}`}
                     className="suggested-question"
                     onClick={() => {
-                      setMessage(question);
-                      setTimeout(() => handleSubmit({ preventDefault: () => {} }), 100);
+                      if (loading || isSending) return;
+                      
+                      // Prevent resubmitting the same question if it was just answered
+                      if (question.trim() === lastSubmittedMessage) {
+                        return;
+                      }
+                      
+                      // Keep a copy of the button's text for submission
+                      const questionToSubmit = question;
+                      
+                      // Clear any text the user might have been typing
+                      setMessage("");
+                      
+                      // Add the question from the button to conversation directly
+                      setConversation(prev => [...prev, { 
+                        id: generateMsgId(),
+                        text: questionToSubmit, 
+                        sender: 'user',
+                        type: 'text'
+                      }]);
+                      
+                      // Set as last submitted message
+                      setLastSubmittedMessage(questionToSubmit.trim());
+                      
+                      // Set loading state
+                      setLoading(true);
+                      setIsSending(true);
+                      
+                      // Send the question from the button to the backend
+                      chatWithAgent(questionToSubmit)
+                        .then(response => {
+                          // Process response
+                          if (!response || (!response.text && !response.response && !response.recommendations)) {
+                            throw new Error('Invalid response from server');
+                          }
+                          
+                          // Get the text from the response
+                          const responseText = response.text || response.response || '';
+                          
+                          // Check if this is a recommendation request
+                          const isRecommendation = response.is_recommendation || 
+                                                  (response.recommendations && response.recommendations.length > 0);
+                          
+                          // Get products from response
+                          const responseProducts = response.recommendations || [];
+                          
+                          // Add bot response
+                          if (isRecommendation && responseProducts.length > 0) {
+                            setConversation(prev => [...prev, { 
+                              id: generateMsgId(),
+                              text: responseText, 
+                              sender: 'bot',
+                              type: 'text',
+                              products: responseProducts
+                            }]);
+                            
+                            // Update products state
+                            setProducts(responseProducts);
+                          } else {
+                            // Just a regular text response without products
+                            setConversation(prev => [...prev, { 
+                              id: generateMsgId(),
+                              text: responseText || "I'm not sure I understand. Could you try rephrasing that?", 
+                              sender: 'bot',
+                              type: 'text'
+                            }]);
+                          }
+                        })
+                        .catch(error => {
+                          console.error('Chat error:', error);
+                          setConversation(prev => [...prev, { 
+                            id: generateMsgId(),
+                            text: 'Sorry, I encountered an error connecting to our AI service. Please try again in a moment.', 
+                            sender: 'bot',
+                            type: 'text'
+                          }]);
+                        })
+                        .finally(() => {
+                          // Reset loading states
+                          setLoading(false);
+                          setIsSending(false);
+                        });
                     }}
                   >
                     {question}

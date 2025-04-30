@@ -154,12 +154,10 @@ class CommerceAgent:
             # Generate educational response with OpenAI first, but only if we have the specific product
             # or no specific product was requested
             if has_specific_product:
-                intro_text = self._get_ai_response(user_message)
-                print(f"Generated AI response: {intro_text}")
+                intro_text = self._get_ai_response(user_message, intent="recommendation")
             else:
                 # Use our alternate message instead of the AI response
                 intro_text = alternate_message
-                print(f"Using alternate message as response: {intro_text}")
             
             # For best-selling products query or if no specific category, use the original message
             if "best" in user_message.lower() or "popular" in user_message.lower() or not category:
@@ -182,7 +180,7 @@ class CommerceAgent:
             }
         else:
             # For general conversation, get AI response
-            ai_response = self._get_ai_response(user_message)
+            ai_response = self._get_ai_response(user_message, intent="conversation")
             return {
                 "text": ai_response,
                 "is_recommendation": False
@@ -211,13 +209,13 @@ class CommerceAgent:
         # First check for keywords that definitely indicate product request
         for keyword in recommendation_keywords:
             if keyword in message_lower:
-                print(f"Product recommendation intent detected: '{keyword}' found in '{message_lower}'")
+                print(f"Product recommendation intent detected: '{keyword}'")
                 return "recommendation"
         
         # Then check for general question indicators
         for indicator in general_question_indicators:
             if indicator in message_lower:
-                print(f"Conversation intent detected: '{indicator}' found in '{message_lower}'")
+                print(f"Conversation intent detected: '{indicator}' ")
                 return "conversation"
         
         # If the message contains product-related terms, consider it a recommendation intent
@@ -230,14 +228,19 @@ class CommerceAgent:
         print(f"No clear intent detected in: '{message_lower}', defaulting to conversation")
         return "conversation"
 
-    def _get_ai_response(self, user_message):
-        """Generate a response to user messages using OpenAI."""
+    def _get_ai_response(self, user_message, intent=None):
+        """Generate a response to user messages using OpenAI.
+        
+        Args:
+            user_message: The user's message
+            intent: The pre-detected intent (optional)
+        """
         if not self.openai_available:
             return "I'm sorry, but the AI chat service is currently unavailable. Please try again later."
         
         try:
-            # Determine if this is a product recommendation query
-            is_recommendation = self._analyze_intent(user_message) == "recommendation"
+            # Use the provided intent or analyze it if not provided
+            is_recommendation = intent == "recommendation" if intent else self._analyze_intent(user_message) == "recommendation"
             
             if is_recommendation:
                 # For product recommendation queries, first provide helpful information then transition to recommendations
@@ -557,7 +560,6 @@ class CommerceAgent:
         Returns:
             dict: Contains has_exact_match indicating if specific products exist
         """
-        print(f"Checking if products with description '{description}' exist in category '{category}'")
         
         if self.use_database:
             try:
@@ -576,7 +578,6 @@ class CommerceAgent:
                 
                 # Return result of check
                 has_exact_match = len(specific_products) > 0
-                print(f"Product availability check: has_exact_match={has_exact_match}")
                 return {'has_exact_match': has_exact_match}
             except Exception as e:
                 print(f"Error during product availability check: {e}")
@@ -600,7 +601,6 @@ class CommerceAgent:
         Returns:
             list: Formatted product list or None if no results
         """
-        print(f"Searching by description '{description}' in category '{category}'")
         try:
             category_fallbacks = self._get_category_fallbacks()
             description_results = search_products_by_description(description, category)
@@ -798,8 +798,6 @@ class CommerceAgent:
 
     def recommend_products(self, query, category=None, description=None, check_only=False):
         """Recommends products based on a text query, potentially using pre-extracted category/description."""
-        print(f"Starting product recommendation with query: '{query}', category: '{category}', description: '{description}'")
-
         # Extract category and description from the query if not provided
         if category is None or description is None:
             extracted_category, extracted_description = self._extract_product_type(query)
@@ -823,7 +821,6 @@ class CommerceAgent:
                 if description and category:
                     description_results = self._search_by_description(description, category, explicit_category_request)
                     if description_results:
-                        print(f"Found {len(description_results)} products matching description '{description}' in category '{category}'")
                         return description_results
                 
                 # 2. If description search failed, try category search with alternatives
