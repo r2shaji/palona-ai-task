@@ -2,6 +2,19 @@
 
 An e-commerce platform with AI-powered product recommendations and search capabilities.
 
+## Demo & Deployment
+
+* **Live Demo:** The application is currently hosted at [http://54.234.186.113:3000/](http://54.234.186.113:3000/)
+* **Video Demo:** Watch a demonstration of the application's features on [YouTube](https://youtu.be/OuVXvktlyk8)
+
+### Deployment Architecture
+
+The application is deployed on an AWS EC2 instance using Docker containers:
+
+* **Application Container:** Docker container running all application services (frontend, backend, and database)
+* **Image Storage:** Product images are stored in AWS S3 bucket.
+* **Database:** MySQL database running on the same EC2 instance to store product details, categories, and other application data.
+
 ## Features
 
 *   **AI Chatbot:**
@@ -249,6 +262,96 @@ The backend exposes the following RESTful API endpoints under the `/api` prefix:
     *   Description: Serves a product image file by proxying it from the configured AWS S3 bucket. Requires S3 access configured in the backend environment.
     *   Response: The image file content with the appropriate content type.
 
+## Database Schema
+
+The application uses a MySQL database with the following schema:
+
+* **products** - Stores product information:
+  * `product_id` (PK): Unique identifier for each product
+  * `name`: Product name
+  * `description`: Detailed product description
+  * `price`: Product price
+  * `image_url`: URL pointing to the product image in S3
+  * `average_rating`: Average customer rating (0-5 scale)
+  * `is_active`: Boolean flag to enable/disable products
+  * `brand_id` (FK): Foreign key referencing the brands table
+
+* **categories** - Stores product categories:
+  * `category_id` (PK): Unique identifier for each category
+  * `name`: Category name
+  * `description`: Category description
+
+* **product_categories** - Junction table for product-category many-to-many relationship:
+  * `product_id` (FK): Reference to products
+  * `category_id` (FK): Reference to categories
+
+* **brands** - Stores brand information:
+  * `brand_id` (PK): Unique identifier for each brand
+  * `name`: Brand name
+  * `description`: Brand description
+
+* **Database Optimizations:**
+  * Add database indexes for frequently queried columns:
+    * `products.name`, `products.description` for text search performance
+    * `products.average_rating` for sorted queries
+    * `products.is_active` for filtering active products
+  * Create proper foreign key constraints for referential integrity
+  * Implement appropriate cascading actions on foreign keys
+  * Optimize SQL queries with proper JOIN strategies
+
+
+## Further Optimizations
+
+The following optimizations are planned for the next version of the application to improve performance, scalability, and user experience:
+
+### Performance Optimizations
+
+* **Redis Caching Layer:**
+  * Implement Redis cache for storing and retrieving frequently accessed data
+  * Cache popular product queries and chat responses for individual users
+  * Store FAISS image index in Redis for faster image similarity searches
+  * Implement TTL for cached items to ensure data freshness
+
+* **Schema Enhancements:**
+  * Add `users` table to track individual users and their preferences
+  * Add `product_variants` table for different variations of the same product (size, color)
+  * Create `user_search_history` table to store and analyze user search patterns
+  * Implement `user_preferences` table to store personalization options
+
+### AI and Chat Improvements
+
+* **Enhanced OpenAI Prompts:**
+  * Develop more refined prompt strategies for handling complex, multi-part queries
+  * Improve extraction of multiple product requirements from a single query
+  * Better handle qualitative vs. quantitative product attributes
+  * Enhance complementary product detection and recommendation logic
+
+* **Conversation History:**
+  * Implement stateful chat sessions to maintain context between user messages
+  * Use previous queries to refine and personalize subsequent recommendations
+  * Track conversion rates from chat interactions
+
+* **Query Processing Optimization:**
+  * Implement parallel processing for complex queries (category extraction, description extraction)
+  * Add support for batch processing of multiple product recommendations
+  * Pre-compute and cache common category-specific queries
+
+### Code Refactoring
+
+* **Function Optimization:**
+  * Refactor large functions into smaller, more focused utilities
+  * Implement memoization for expensive computations
+  * Add better error handling and graceful degradation
+  * Improve logging for performance monitoring
+
+* **Image Search Enhancements:**
+  * Implement more efficient feature extraction using GPU acceleration where available
+  * Add support for multiple image embeddings per product (different angles, variations)
+  * Improve similarity scoring algorithm with weighted features
+
+These optimizations aim to significantly improve the application's responsiveness and enable more sophisticated user interactions and product recommendations.
+
+
 ## Docker MySQL Management
 
 ### Accessing the MySQL Container
@@ -282,6 +385,5 @@ If OpenAI API calls fail:
 1. Verify your API key in the `.env` file
 2. Check that you have sufficient credits on your OpenAI account
 3. The application will fall back to a file-based catalog if OpenAI is unavailable
-
 
 
