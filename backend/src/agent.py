@@ -171,6 +171,12 @@ class CommerceAgent:
             category, description = self._extract_product_type(user_message)
             print(f"Extracted category: {category}, Description: {description}")
             
+            # CRITICAL FIX: Explicitly handle "General" category from OpenAI -> treat as no category
+            # Also catch quoted versions from logs like "General"
+            if category and category.lower().strip('"\'') == "general":
+                print("DEBUG: Treating extracted 'General' category as None")
+                category = None
+                
             # Reset description if it's "none"
             if description and description.lower() == "none":
                 print("DEBUG: Setting 'none' description to None in chat method")
@@ -186,6 +192,7 @@ class CommerceAgent:
                 alternate_message = f"We don't have {original_category} available in our store. Here are some {category} options you might like instead:"
                 print(f"DEBUG: Using alternative category message: {alternate_message}")
                 has_specific_product = False
+            # Check for specific products ONLY if category and description are valid and category is not 'General'
             elif category and description:
                 # Only check for specific products if we have a meaningful description
                 # Try to find the specific products requested
@@ -201,11 +208,12 @@ class CommerceAgent:
                 except Exception as e:
                     print(f"Error during product availability check: {e}")
                     has_specific_product = True  # Default to showing normal response
+            # Handle cases with category OR description, but not both (or general queries)
             else:
-                has_specific_product = True  # No specific criteria, so proceed normally
+                has_specific_product = True  # No specific criteria to check against, so assume general display
             
             # Generate educational response with OpenAI first, but only if we have the specific product
-            # or no specific product was requested
+            # or no specific product/category was requested
             if has_specific_product:
                 intro_text = self._get_ai_response(user_message, intent="recommendation")
                 print(f"DEBUG: Using AI response intro: {intro_text[:50]}...")
@@ -214,23 +222,35 @@ class CommerceAgent:
                 intro_text = alternate_message
                 print(f"DEBUG: Using alternate message intro: {intro_text}")
             
-            # For best-selling products query or if no specific category, use the original message
-            if "best" in user_message.lower() or "popular" in user_message.lower() or not category:
-                recommendations = self.recommend_products(user_message)
+            # CRITICAL FIX: More robust detection of best-selling, trending, popular type queries
+            # Use best sellers/general popular items if query implies it or no category specified
+            best_seller_indicators = ["best", "popular", "trending", "top", "bestselling", "best-selling", "favorite"]
+            is_best_seller_query = any(term in user_message.lower() for term in best_seller_indicators)
+            
+            # CRITICAL FIX: Handle category-specific best-seller queries correctly
+            if is_best_seller_query and category:
+                print(f"DEBUG: Fetching best-sellers specifically for category='{category}'")
+                recommendations = self.recommend_products(user_message, category, description)
+            elif not category or is_best_seller_query:
+                print(f"DEBUG: Fetching general best-selling products. Category={category}, is_best_seller_query={is_best_seller_query}")
+                recommendations = self.recommend_products(user_message) # Gets best sellers
             else:
-                # Pass the full message to ensure description is used
+                # Fetch products based on category and description
+                print(f"DEBUG: Fetching products for category='{category}', description='{description}'")
                 recommendations = self.recommend_products(user_message, category, description)
             
-            # If we have an alternate message in the recommendations, remove it since we've already
-            # used it as the main response text
-            if not has_specific_product and recommendations and len(recommendations) > 0 and 'alternate_message' in recommendations[0]:
-                print(f"DEBUG: Removing alternate_message from recommendations[0]: {recommendations[0]['alternate_message']}")
-                del recommendations[0]['alternate_message']
+            # Clean up potential alternate messages from recommendations if already handled
+            if recommendations and len(recommendations) > 0 and 'alternate_message' in recommendations[0]:
+                if not has_specific_product or 'none' in recommendations[0]['alternate_message'].lower():
+                    print(f"DEBUG: Removing alternate_message from recommendations[0]: {recommendations[0]['alternate_message']}")
+                    del recommendations[0]['alternate_message']
             
-            # Final check to catch any "none" descriptions in intro_text
-            if intro_text and "none" in intro_text.lower() and category:
-                print(f"DEBUG: Fixing 'none' in intro_text: {intro_text}")
-                intro_text = f"Here are some {category} options you might like:"
+            # Final check to fix intro_text if it contains problematic phrases like "We don't have..." when category is None
+            if not category and intro_text and "we don't have" in intro_text.lower():
+                 print(f"DEBUG: Fixing intro_text for general query: {intro_text}")
+                 # Replace with a generic intro or the AI response if available
+                 ai_response_fallback = self._get_ai_response(user_message, intent="recommendation")
+                 intro_text = ai_response_fallback if ai_response_fallback else "Here are some popular options:"
             
             # Always return recommendations - if none found, the recommend_products method
             # should fall back to popular items
@@ -464,37 +484,41 @@ class CommerceAgent:
             self.original_category = None
             self.suggested_alternative = None
 
-            # Handle general browsing requests
-            if category.lower() == "general":
-                print("Query identified as general browsing request")
-                return None
+            # CRITICAL FIX: More robust General category check - handle with/without quotes, case insensitive
+            # This ensures we catch all variations: General, "General", 'general', etc.
+            if category.lower().strip('"\'') == "general":
+                print("Query identified as general browsing request by OpenAI.")
+                return None # Return None for General category
             
             # Handle alternative category suggestions
             if "alternative:" in category.lower():
                 parts = category.split(":", 1)
                 if len(parts) > 1:
                     alternative_category = parts[1].strip()
-                    original_category = message.lower()
-                    
+                    original_category_guess = "product" # Default guess
                     # Extract the original category the user asked for
                     # This is a simple extraction and could be improved with OpenAI
-                    for word in ["jackets", "jacket", "coats", "coat", "sweaters", "sweatshirts"]:
+                    for word in ["jackets", "jacket", "coats", "coat", "sweaters", "sweatshirts", "dresses", "dress"]:
                         if word in message.lower():
-                            original_category = word
+                            original_category_guess = word
                             break
                     
-                    print(f"Similar but invalid category detected: original '{original_category}', suggested alternative: '{alternative_category}'")
+                    print(f"Similar but invalid category detected: original '{original_category_guess}', suggested alternative: '{alternative_category}'")
                     
                     # Store the original invalid category and suggested alternative for better messaging
                     self.alternative_suggestion = True
-                    self.original_category = original_category
+                    self.original_category = original_category_guess # Store the guessed original request
                     self.suggested_alternative = alternative_category
                     
                     # Return the normalized alternative category
                     return self._normalize_category(alternative_category)
             
-            # Normalize the category
+            # Normalize the category - check if the result is 'General' again after normalization
             normalized_category = self._normalize_category(category)
+            if normalized_category and normalized_category.lower() == "general":
+                 print("Normalized category resulted in 'General', returning None.")
+                 return None
+                 
             return normalized_category
             
         except Exception as e:
@@ -779,7 +803,7 @@ class CommerceAgent:
             print(f"Error in description search: {e}")
             return None
 
-    def _search_by_category(self, category, description=None, alternative_suggestion=False, original_description=None):
+    def _search_by_category(self, category, description=None, alternative_suggestion=False, original_description=None, original_query=None):
         """Search for products by category with optional description filtering.
         
         Returns:
@@ -791,6 +815,17 @@ class CommerceAgent:
         # Check if this is an alternative suggestion
         has_alternative_msg = hasattr(self, 'alternative_suggestion') and self.alternative_suggestion
         
+        # Check if this is a seasonal or general browsing query
+        seasonal_terms = ["spring", "summer", "winter", "fall", "autumn", "trending", "season"]
+        is_seasonal_description = original_description and any(term in original_description.lower() for term in seasonal_terms)
+        is_seasonal_query = original_query and any(term in original_query.lower() for term in seasonal_terms)
+        is_general_category = not category or (category and category.lower() == "general")
+        
+        # Block generating alternate messages for seasonal/trending queries
+        if is_seasonal_description or is_seasonal_query or is_general_category:
+            alternative_suggestion = False
+            print(f"DEBUG: Blocking alternate message for seasonal/trending query or general category")
+        
         filtered_products = get_products_by_category(category)
 
         if filtered_products:
@@ -798,16 +833,18 @@ class CommerceAgent:
             formatted_products = self._format_products(filtered_products)
             
             # Add alternative message if this was a suggestion for an unsupported category
-            if has_alternative_msg and category == self.suggested_alternative:
+            # AND not a seasonal/trending query
+            if has_alternative_msg and category == self.suggested_alternative and not is_seasonal_query:
                 alt_message = f"We don't have the exact product you're looking for, but here are some {category} you might like instead:"
                 if formatted_products:
                     formatted_products[0]['alternate_message'] = alt_message
             # Or add alternate message if needed for description not found
-            elif alternative_suggestion and original_description and original_description.lower() != "none":
+            # AND not a seasonal/trending query AND not a general category
+            elif alternative_suggestion and original_description and original_description.lower() != "none" and not is_seasonal_description and not is_general_category:
                 print(f"Showing alternative products from category '{category}' instead of '{original_description} {category}'")
-                # Create a message that never mentions "none"
+                # Create a message that never mentions "none" or "general"
                 alternate_message = f"Here are some popular {category} options:"
-                if original_description and original_description.lower() != "none":
+                if original_description and original_description.lower() != "none" and "general" not in original_description.lower() and not is_seasonal_description:
                     alternate_message = f"We don't have {original_description} {category} at the moment. Here are other {category} options you might like:"
                 
                 if formatted_products:
@@ -861,12 +898,12 @@ class CommerceAgent:
             # Format products
             formatted_products = self._format_products(filtered_products)
             
-            # Add alternate message if needed
-            if alternative_suggestion and original_description and original_description.lower() != "none":
+            # Add alternate message if needed - BUT ONLY IF not seasonal/trending AND not general category
+            if alternative_suggestion and original_description and original_description.lower() != "none" and not is_seasonal_description and not is_general_category:
                 print(f"Showing alternative products from category '{category}' instead of '{original_description} {category}'")
                 # Create a message that never mentions "none"
                 alternate_message = f"Here are some popular {category} options:"
-                if original_description and original_description.lower() != "none":
+                if original_description and original_description.lower() != "none" and "general" not in original_description.lower() and not is_seasonal_description:
                     alternate_message = f"We don't have {original_description} {category} at the moment. Here are other {category} options you might like:"
                 
                 if formatted_products:
@@ -972,15 +1009,41 @@ class CommerceAgent:
             description = description or extracted_description
             print(f"Extracted from query - category: '{category}', description: '{description}'")
 
+        # CRITICAL FIX: Normalize "General" category to None in ALL forms (with or without quotes)
+        if category:
+            # Check for the various forms "General" might appear from logs
+            general_patterns = ["general", '"general"', "'general'"]
+            if any(category.lower().strip('"\'') == pattern.lower().strip('"\'') for pattern in general_patterns):
+                print(f"DEBUG: Converting category '{category}' to None (general query)")
+                category = None
+        
         # Track if category was explicitly requested
         explicit_category_request = category is not None
+        
         # Store initial description for message creation if needed
         original_description = description
         
         # If description is "none", treat it as None
-        if description and description.lower() == "none":
+        if description and (description.lower() == "none" or description.lower() == '"none"' or description.lower() == "'none'"):
             description = None
             original_description = None
+        
+        # Check if this is a best-seller type query
+        best_seller_terms = ["best", "best-selling", "bestselling", "popular", "top", "trending"]
+        is_best_seller_query = any(term in query.lower() for term in best_seller_terms)
+        
+        # Handle seasonal or general browsing queries
+        seasonal_terms = ["spring", "summer", "winter", "fall", "autumn", "season"]
+        is_seasonal_query = any(term in query.lower() for term in seasonal_terms)
+        is_general_query = category is None  # Since we normalized "General" to None above
+        
+        # CRITICAL FIX: Only bypass normal flow for GENERAL best-seller queries (no specific category)
+        # For category-specific best-seller queries (e.g., "best-selling pants"), use the category filter
+        if is_general_query and (is_best_seller_query or is_seasonal_query):
+            print(f"DEBUG: Bypassing normal query flow for general best-seller query: '{query}'")
+            return self._get_best_sellers()
+        
+        # For category-specific best-seller queries, continue with normal flow but use sorting by rating later
 
         # If this is just a check for product availability, handle it separately
         if check_only and category and description:
@@ -993,6 +1056,11 @@ class CommerceAgent:
                 if description and category:
                     description_results = self._search_by_description(description, category, explicit_category_request)
                     if description_results:
+                        # If this is a best-seller query, sort by rating
+                        if is_best_seller_query:
+                            description_results = sorted(description_results, 
+                                                       key=lambda p: float(p.get('rating', 0)), 
+                                                       reverse=True)
                         return description_results
                 
                 # 2. If description search failed, try category search with alternatives
@@ -1006,35 +1074,35 @@ class CommerceAgent:
                         category, 
                         description, 
                         alternative_suggestion,
-                        original_description
+                        original_description,
+                        query  # Pass the original query to check for seasonal/trending terms
                     )
                     
                     if category_results:
                         print(f"Found {len(category_results)} products in category '{category}'")
                         
-                        # Sort by rating if query implies 'best'
-                        if query and any(term in query.lower() for term in [
-                            "best-selling", "bestselling", "popular", "top", "comfortable", "best", "what"
+                        # Sort by rating if this is a best-seller query or query implies 'best'
+                        if is_best_seller_query or any(term in query.lower() for term in [
+                            "comfortable", "best", "comfort"
                         ]):
-                            category_results = sorted(category_results, key=lambda p: float(p.get('rating', 0)), reverse=True)
+                            print(f"DEBUG: Sorting {category} products by rating (best-seller query)")
+                            category_results = sorted(category_results, 
+                                                   key=lambda p: float(p.get('rating', 0)), 
+                                                   reverse=True)
                         
                         # Safety check: Remove any alternate_message with 'none' in it
                         if len(category_results) > 0 and 'alternate_message' in category_results[0]:
                             message = category_results[0]['alternate_message']
-                            if 'none' in message.lower():
-                                print(f"DEBUG: Cleaning up 'none' in alternate_message: {message}")
+                            if 'none' in message.lower() or 'general' in message.lower():
+                                print(f"DEBUG: Cleaning up problematic alternate_message: {message}")
                                 del category_results[0]['alternate_message']
                             
                         return category_results[:5]
                 
-                # 3. For explicit category searches with no results, honor the request
-                if explicit_category_request and category:
-                    print(f"No products found at all for explicit category request: {category}")
-                    return []
-
-                # 4. Fallback to best-sellers for non-explicit category requests
-                if not explicit_category_request:
-                    return self._get_best_sellers()
+                # 3. For explicit category searches with no results, don't return empty but use best-sellers
+                # CRITICAL FIX: Always fall back to best-sellers rather than empty results
+                print(f"DEBUG: Falling back to best-sellers after no specific matches found")
+                return self._get_best_sellers()
 
             except Exception as e:
                 print(f"Error performing database product search: {e}")
@@ -1043,14 +1111,44 @@ class CommerceAgent:
         # --- File-based search path (if database fails or unavailable) ---
         results = self._search_file_based(category, description, explicit_category_request, original_description)
         
-        # Final safety check for any 'none' references in alternate_message
+        # Final safety check for any 'none' or 'general' references in alternate_message
         if results and len(results) > 0 and 'alternate_message' in results[0]:
             message = results[0]['alternate_message'] 
-            if 'none' in message.lower():
-                print(f"DEBUG: Removing 'none' alternate_message in final safety check: {message}")
+            if 'none' in message.lower() or 'general' in message.lower() or any(term in message.lower() for term in seasonal_terms):
+                print(f"DEBUG: Removing problematic alternate_message in final safety check: {message}")
                 del results[0]['alternate_message']
         
+        # CRITICAL FIX: If no results, always return best-sellers
+        if not results or len(results) == 0:
+            print(f"DEBUG: No results from file-based search, returning best-sellers")
+            return self._get_best_sellers()
+        
         return results
+
+    def _get_best_sellers_by_category(self, category, limit=5):
+        """Get best-selling products from a specific category."""
+        print(f"DEBUG: Getting best-sellers specifically for category: {category}")
+        try:
+            # Get products directly from the category with proper sorting
+            products = get_top_products_by_category(category, limit=limit)
+            if products:
+                return self._format_products(products, limit=limit)
+            
+            # If no direct results, try to find by category directly
+            category_products = get_products_by_category(category)
+            if category_products:
+                # Sort by rating ourselves
+                sorted_products = sorted(category_products, 
+                                       key=lambda p: float(p['average_rating']), 
+                                       reverse=True)
+                return self._format_products(sorted_products, limit=limit, sort_by_rating=True)
+            
+            # If still no results, return general best-sellers
+            print(f"DEBUG: No products found for category {category}, returning general best-sellers")
+            return self._get_best_sellers(limit)
+        except Exception as e:
+            print(f"Error getting best-sellers for category {category}: {e}")
+            return self._get_best_sellers(limit)
 
     def _extract_image_features(self, img):
         """Extract features from an image using CLIP.
