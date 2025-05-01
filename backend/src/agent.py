@@ -171,19 +171,31 @@ class CommerceAgent:
             category, description = self._extract_product_type(user_message)
             print(f"Extracted category: {category}, Description: {description}")
             
+            # Reset description if it's "none"
+            if description and description.lower() == "none":
+                print("DEBUG: Setting 'none' description to None in chat method")
+                description = None
+            
             # First check if we're going to find products matching these criteria
             has_specific_product = False
             alternate_message = None
             
-            if category and description:
-                # Do a preliminary search to see if we have the specific products
+            # Check if this was a request for a category we don't have
+            if hasattr(self, 'alternative_suggestion') and self.alternative_suggestion:
+                original_category = self.original_category
+                alternate_message = f"We don't have {original_category} available in our store. Here are some {category} options you might like instead:"
+                print(f"DEBUG: Using alternative category message: {alternate_message}")
+                has_specific_product = False
+            elif category and description:
+                # Only check for specific products if we have a meaningful description
+                # Try to find the specific products requested
                 try:
-                    # Try to find the specific products requested
                     test_recommendations = self.recommend_products(user_message, category, description, check_only=True)
                     if test_recommendations and isinstance(test_recommendations, dict) and test_recommendations.get('has_exact_match') is False:
                         # We found that there are no exact matches, but we have alternatives
                         has_specific_product = False
                         alternate_message = f"We don't have {description} {category} at the moment. Here are other {category} options you might like:"
+                        print(f"DEBUG: Using no exact match message: {alternate_message}")
                     else:
                         has_specific_product = True
                 except Exception as e:
@@ -196,9 +208,11 @@ class CommerceAgent:
             # or no specific product was requested
             if has_specific_product:
                 intro_text = self._get_ai_response(user_message, intent="recommendation")
+                print(f"DEBUG: Using AI response intro: {intro_text[:50]}...")
             else:
                 # Use our alternate message instead of the AI response
                 intro_text = alternate_message
+                print(f"DEBUG: Using alternate message intro: {intro_text}")
             
             # For best-selling products query or if no specific category, use the original message
             if "best" in user_message.lower() or "popular" in user_message.lower() or not category:
@@ -210,7 +224,13 @@ class CommerceAgent:
             # If we have an alternate message in the recommendations, remove it since we've already
             # used it as the main response text
             if not has_specific_product and recommendations and len(recommendations) > 0 and 'alternate_message' in recommendations[0]:
+                print(f"DEBUG: Removing alternate_message from recommendations[0]: {recommendations[0]['alternate_message']}")
                 del recommendations[0]['alternate_message']
+            
+            # Final check to catch any "none" descriptions in intro_text
+            if intro_text and "none" in intro_text.lower() and category:
+                print(f"DEBUG: Fixing 'none' in intro_text: {intro_text}")
+                intro_text = f"Here are some {category} options you might like:"
             
             # Always return recommendations - if none found, the recommend_products method
             # should fall back to popular items
@@ -375,16 +395,32 @@ class CommerceAgent:
             # Use OpenAI to extract the product type and description
             prompt = f"""
             Analyze the following query from a customer shopping at a clothing store: "{message}"
+
+            Our store only has these valid product categories: T-Shirts, Pants, Skirts.
+
+            VALID ANSWER FORMAT:
+            - Return ONLY ONE of these exact strings:
+            * "T-Shirts" (if query is about shirts/tops)
+            * "Pants" (if query is about pants/bottoms)
+            * "Skirts" (if query is about skirts)
+            * "Alternative:T-Shirts" (if query is about tops we don't carry, like jackets)
+            * "Alternative:Pants" (if query is about bottoms we don't carry)
+            * "Alternative:Skirts" (if query is about skirts or similar items)
+            * "T-shirts" (if query is about what goes well with skirts, because it is a complementary query)
+            * "Pants" (if query is about what goes well with white t-shirt, because it is a complementary query)
+            * "General" (if query is about trending/seasonal items or general browsing)
             
-            Task 1: Determine if this is a regular product search or a "complementary product" query.
-            A complementary product query would be something like "what goes well with skirts" or "what should I wear with jeans".
+            Task 1: Determine if this query is:
+                -A specific product search 
+                - A complementary product query. A complementary product query would be something like "what goes well with skirts" or "what should I wear with jeans".
+                - A general browsing request (trending items, seasonal products, etc.)
             
             Task 2: Based on your analysis, extract ONE product type/category from the query:
             
-            - If this is a REGULAR product search:
-              * Extract the main product category the user is looking for
-              * Valid categories are: T-Shirts, Pants, Jackets, Skirts
-              * Return ONLY the category name exactly as listed above
+            For specific product searches:
+                * If the product exactly matches one of our valid categories, return just that category name
+                * If the product is something we don't carry (like "jackets" or "dresses"), return "Alternative:NearestCategory" 
+                    where NearestCategory is the most similar valid category (e.g., "Alternative:T-Shirts" for jackets)
             
             - If this is a COMPLEMENTARY product query:
               * Identify what product the user already has (like skirts, pants, etc.)
@@ -393,14 +429,21 @@ class CommerceAgent:
               * For bottoms, return "Pants" or "Skirts" as appropriate
               * For outerwear, return "Jackets"
               * Return ONLY the complementary category name
-            
+              * If you identified jackets or other similar wear which don't match the valid categories, return "General"
+
+            - If this is a GENERAL browsing request (like trending items, best sellers, what are trending, hot products,etc.):
+                * Return ONLY the word "General"
+
+            IMPORTANT: 
+            1. Descriptive terms (colors, seasons, materials) are NOT categories
+            2. Return ONLY a valid category, "Alternative:Category", or "General" with no explanation
+            3. Make your best judgment to match non-valid categories to our valid ones based on apparel type
+                
             Example valid responses:
             "T-Shirts" (for regular search for shirts or if complementary to pants/skirts)
             "Pants" (for regular search for pants/jeans or if complementary to shirts)
-            "Jackets" (for regular search for jackets/coats or as a complementary layer)
             "Skirts" (for regular search for skirts or if complementary to tops)
-            
-            Return ONLY the category name with no additional explanation or text.
+
             """
             
             response = openai.chat.completions.create(
@@ -415,6 +458,40 @@ class CommerceAgent:
             
             category = response.choices[0].message.content.strip()
             print(f"OpenAI extracted category: {category}")
+
+            # Reset alternative suggestion flags
+            self.alternative_suggestion = False
+            self.original_category = None
+            self.suggested_alternative = None
+
+            # Handle general browsing requests
+            if category.lower() == "general":
+                print("Query identified as general browsing request")
+                return None
+            
+            # Handle alternative category suggestions
+            if "alternative:" in category.lower():
+                parts = category.split(":", 1)
+                if len(parts) > 1:
+                    alternative_category = parts[1].strip()
+                    original_category = message.lower()
+                    
+                    # Extract the original category the user asked for
+                    # This is a simple extraction and could be improved with OpenAI
+                    for word in ["jackets", "jacket", "coats", "coat", "sweaters", "sweatshirts"]:
+                        if word in message.lower():
+                            original_category = word
+                            break
+                    
+                    print(f"Similar but invalid category detected: original '{original_category}', suggested alternative: '{alternative_category}'")
+                    
+                    # Store the original invalid category and suggested alternative for better messaging
+                    self.alternative_suggestion = True
+                    self.original_category = original_category
+                    self.suggested_alternative = alternative_category
+                    
+                    # Return the normalized alternative category
+                    return self._normalize_category(alternative_category)
             
             # Normalize the category
             normalized_category = self._normalize_category(category)
@@ -436,17 +513,29 @@ class CommerceAgent:
         try:
             description_prompt = f"""
             Analyze this query and extract any descriptive terms about the product: "{message}"
-            Focus on attributes like color, material, style, occasion, season, etc.
-            If no descriptive terms are found, return "none".
+            
+            Focus on attributes like:
+            - Objective attributes: color, material, pattern, size, occasion, season, etc.
+            - NOT subjective qualifiers like: stylish, fashionable, trendy, cool, nice, beautiful, gorgeous
+
+            Rules:
+            1. If the query only contains subjective qualifiers (stylish, fashionable, trendy, etc.), return "none"
+            2. If the query contains both objective attributes and subjective qualifiers, return ONLY the objective attributes
+            3. If no descriptive terms are found, return "none"
+            
             Return ONLY the descriptive terms as simple words or short phrases, no sentences or explanations.
             Do not include the product type itself in the description.
             
             Example inputs and outputs:
             "Show me some t-shirts" -> "none"
             "I want black pants" -> "black"
+            "Looking for stylish pants" -> "none"
             "Looking for a warm jacket for winter" -> "warm, winter"
             "Show me more black pants" -> "black"
+            "Show me more fashionable black shirts" -> "black"
             "Soft cotton shirts for summer" -> "soft, cotton, summer"
+            "Do you have trendy skirts" -> "none"
+            "Do you have red stylish pants" -> "red"
             """
             
             description_response = openai.chat.completions.create(
@@ -698,11 +787,36 @@ class CommerceAgent:
         """
         print(f"Querying products directly by category: {category}")
         category_fallbacks = self._get_category_fallbacks()
+
+        # Check if this is an alternative suggestion
+        has_alternative_msg = hasattr(self, 'alternative_suggestion') and self.alternative_suggestion
         
         filtered_products = get_products_by_category(category)
+
+        if filtered_products:
+            # Format products
+            formatted_products = self._format_products(filtered_products)
+            
+            # Add alternative message if this was a suggestion for an unsupported category
+            if has_alternative_msg and category == self.suggested_alternative:
+                alt_message = f"We don't have the exact product you're looking for, but here are some {category} you might like instead:"
+                if formatted_products:
+                    formatted_products[0]['alternate_message'] = alt_message
+            # Or add alternate message if needed for description not found
+            elif alternative_suggestion and original_description and original_description.lower() != "none":
+                print(f"Showing alternative products from category '{category}' instead of '{original_description} {category}'")
+                # Create a message that never mentions "none"
+                alternate_message = f"Here are some popular {category} options:"
+                if original_description and original_description.lower() != "none":
+                    alternate_message = f"We don't have {original_description} {category} at the moment. Here are other {category} options you might like:"
+                
+                if formatted_products:
+                    formatted_products[0]['alternate_message'] = alternate_message
+            
+            return formatted_products
         
         # For category-only search, let's try to filter by description ourselves
-        if filtered_products and description and not alternative_suggestion:
+        if filtered_products and description and not alternative_suggestion and description.lower() != "none":
             print(f"Filtering {len(filtered_products)} products from '{category}' by description '{description}'")
             matching_products = []
             description_terms = description.lower().split()
@@ -716,6 +830,7 @@ class CommerceAgent:
             if matching_products:
                 print(f"Found {len(matching_products)} products after manual filtering by description")
                 filtered_products = matching_products
+
         
         # If no results with primary category, try fallback categories
         if not filtered_products and category in category_fallbacks:
@@ -724,7 +839,7 @@ class CommerceAgent:
                 fallback_products = get_products_by_category(fallback_category)
                 
                 # Also apply description filtering to fallback results if available
-                if fallback_products and description and not alternative_suggestion:
+                if fallback_products and description and not alternative_suggestion and description.lower() != "none":
                     matching_fallback = []
                     description_terms = description.lower().split()
                     
@@ -747,9 +862,12 @@ class CommerceAgent:
             formatted_products = self._format_products(filtered_products)
             
             # Add alternate message if needed
-            if alternative_suggestion and original_description:
+            if alternative_suggestion and original_description and original_description.lower() != "none":
                 print(f"Showing alternative products from category '{category}' instead of '{original_description} {category}'")
-                alternate_message = f"We don't have {original_description} {category} at the moment. Here are other {category} options you might like:"
+                # Create a message that never mentions "none"
+                alternate_message = f"Here are some popular {category} options:"
+                if original_description and original_description.lower() != "none":
+                    alternate_message = f"We don't have {original_description} {category} at the moment. Here are other {category} options you might like:"
                 
                 if formatted_products:
                     formatted_products[0]['alternate_message'] = alternate_message
@@ -793,12 +911,18 @@ class CommerceAgent:
         Simplified version that only uses the database."""
         print("Using fallback database search method")
         
+        # Reset description if it's "none"
+        if description and description.lower() == "none":
+            print("DEBUG: Setting 'none' description to None in _search_file_based")
+            description = None
+            original_description = None
+        
         # Try to get products by category first
         if category:
             products = get_products_by_category(category)
             
             # Filter by description if we have one
-            if description and products:
+            if description and products and description.lower() != "none":
                 description_terms = description.lower().split()
                 filtered_products = []
                 
@@ -808,21 +932,23 @@ class CommerceAgent:
                     # Product matches if all description terms are found in product text
                     if all(term in product_text for term in description_terms):
                         filtered_products.append(product)
-                
-                if filtered_products:
-                    print(f"Found {len(filtered_products)} products matching '{description}' in category '{category}'")
-                    formatted_results = self._format_products(filtered_products, limit=5)
-                    return formatted_results
+            
+            if filtered_products:
+                print(f"Found {len(filtered_products)} products matching '{description}' in category '{category}'")
+                formatted_results = self._format_products(filtered_products, limit=5)
+                return formatted_results
             
             # If we have products for the category but no matches with description,
             # show category products as alternatives if this was a specific request
-            if products and explicit_category_request and description:
+            if products and explicit_category_request and description and description.lower() != "none":
                 print(f"No {description} {category} found, suggesting alternatives from category")
                 formatted_results = self._format_products(products, limit=5)
                 
                 # Add alternative message
-                if formatted_results:
-                    formatted_results[0]['alternate_message'] = f"We don't have {original_description} {category} at the moment. Here are other {category} options you might like:"
+                if formatted_results and original_description and original_description.lower() != "none":
+                    alternate_message = f"We don't have {original_description} {category} at the moment. Here are other {category} options you might like:"
+                    print(f"DEBUG: Setting alternate_message in _search_file_based: {alternate_message}")
+                    formatted_results[0]['alternate_message'] = alternate_message
                 
                 return formatted_results
             
@@ -850,6 +976,11 @@ class CommerceAgent:
         explicit_category_request = category is not None
         # Store initial description for message creation if needed
         original_description = description
+        
+        # If description is "none", treat it as None
+        if description and description.lower() == "none":
+            description = None
+            original_description = None
 
         # If this is just a check for product availability, handle it separately
         if check_only and category and description:
@@ -886,6 +1017,13 @@ class CommerceAgent:
                             "best-selling", "bestselling", "popular", "top", "comfortable", "best", "what"
                         ]):
                             category_results = sorted(category_results, key=lambda p: float(p.get('rating', 0)), reverse=True)
+                        
+                        # Safety check: Remove any alternate_message with 'none' in it
+                        if len(category_results) > 0 and 'alternate_message' in category_results[0]:
+                            message = category_results[0]['alternate_message']
+                            if 'none' in message.lower():
+                                print(f"DEBUG: Cleaning up 'none' in alternate_message: {message}")
+                                del category_results[0]['alternate_message']
                             
                         return category_results[:5]
                 
@@ -897,16 +1035,22 @@ class CommerceAgent:
                 # 4. Fallback to best-sellers for non-explicit category requests
                 if not explicit_category_request:
                     return self._get_best_sellers()
-                else:
-                    # Honor explicit category request by returning empty results
-                    return []
 
             except Exception as e:
                 print(f"Error performing database product search: {e}")
                 # Fall back to file-based implementation
         
         # --- File-based search path (if database fails or unavailable) ---
-        return self._search_file_based(category, description, explicit_category_request, original_description)
+        results = self._search_file_based(category, description, explicit_category_request, original_description)
+        
+        # Final safety check for any 'none' references in alternate_message
+        if results and len(results) > 0 and 'alternate_message' in results[0]:
+            message = results[0]['alternate_message'] 
+            if 'none' in message.lower():
+                print(f"DEBUG: Removing 'none' alternate_message in final safety check: {message}")
+                del results[0]['alternate_message']
+        
+        return results
 
     def _extract_image_features(self, img):
         """Extract features from an image using CLIP.
