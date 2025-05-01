@@ -24,12 +24,13 @@ if not OPENAI_API_KEY:
 else:
     openai.api_key = OPENAI_API_KEY
 
-s3 = boto3.client('s3')           # picks up the EC2 role for creds
-BUCKET = 'danieldoescode-s3'
-PREFIX = 'palona/data/'
+# --- AWS S3 Configuration ---
+s3 = boto3.client('s3')  # picks up the EC2 role for creds
+S3_BUCKET = os.getenv('S3_BUCKET_NAME')
+S3_PREFIX = os.getenv('S3_PREFIX', 'palona/data/')
 
 # --- OpenAI Model Configuration ---
-OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
 SYSTEM_PROMPT = """
 You are Palona, a helpful and friendly AI assistant for a commerce website specializing in apparel.
 
@@ -64,7 +65,7 @@ def build_image_index():
     if model is None or processor is None:
         print("Cannot build image index: Failed to load CLIP model.")
         return
-    
+
     # Get all categories from the database
     categories = get_all_categories()
     if not categories:
@@ -115,11 +116,11 @@ def build_image_index():
                 
             except Exception as e:
                 print(f"Error processing product {product['product_id']}: {e}")
-    
+
     if not features:
         print("Cannot build image index: No features were extracted.")
         return
-    
+
     # Convert features to a numpy array
     features_np = np.array(features).astype("float32")
     
@@ -136,8 +137,17 @@ def build_image_index():
     print(f"Image index built successfully with {len(product_ids)} products from {len(categories)} categories in {end_time - start_time:.2f} seconds.")
 
 def fetch_image(filename):
-    obj = s3.get_object(Bucket=BUCKET, Key=f"{PREFIX}{filename}")
-    return Image.open(BytesIO(obj["Body"].read()))
+    """Fetch an image from S3 bucket"""
+    if not S3_BUCKET:
+        print("Warning: S3_BUCKET_NAME not found in environment variables.")
+        return None
+        
+    try:
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=f"{S3_PREFIX}{filename}")
+        return Image.open(BytesIO(obj["Body"].read()))
+    except ClientError as e:
+        print(f"Error fetching image from S3: {e}")
+        return None
 
 class CommerceAgent:
     def __init__(self):

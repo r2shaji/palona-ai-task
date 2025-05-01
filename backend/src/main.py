@@ -7,12 +7,13 @@ from flask import Flask, Response, abort
 import boto3
 from botocore.exceptions import ClientError
 
-s3 = boto3.client('s3')           # picks up the EC2 role for creds
-BUCKET = 'danieldoescode-s3'
-PREFIX = 'palona/data/'
-
 # Load environment variables 
 load_dotenv()
+
+# AWS S3 Configuration
+s3 = boto3.client('s3')  # picks up the EC2 role for creds
+S3_BUCKET = os.getenv('S3_BUCKET_NAME')
+S3_PREFIX = os.getenv('S3_PREFIX', 'palona/data/')
 
 # Import agent logic and database functions
 from agent import CommerceAgent
@@ -137,9 +138,12 @@ def get_category_products(category_id):
 
 @app.route('/api/images/<filename>')
 def get_asset(filename):
-    key = f'{PREFIX}{filename}'
+    if not S3_BUCKET:
+        return jsonify({'error': 'S3 bucket not configured'}), 500
+        
+    key = f'{S3_PREFIX}{filename}'
     try:
-        obj = s3.get_object(Bucket=BUCKET, Key=key)
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
         return Response(
             obj['Body'].iter_chunks(8192),
             content_type=obj['ContentType']

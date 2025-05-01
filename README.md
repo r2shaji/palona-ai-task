@@ -71,7 +71,12 @@ Create a `.env` file in the project root directory (`palona-ai-task/`). This fil
 ```dotenv
 # --- Backend Configuration ---
 OPENAI_API_KEY=your_openai_api_key_here # Replace with your OpenAI API key
-# API_BASE_URL=http://localhost:5001 # Optional: Base URL for backend (if different from default)
+OPENAI_MODEL=gpt-4 # Can be changed to other OpenAI models if needed
+API_BASE_URL=http://localhost:5001 # Optional: Base URL for backend (if different from default)
+
+# --- AWS S3 Configuration ---
+S3_BUCKET_NAME=your-s3-bucket-name 
+S3_PREFIX=palona/data/ # Prefix path for product images in your S3 bucket
 
 # --- Database Configuration (for backend) ---
 # These should match the MySQL service settings in docker-compose.yml
@@ -89,7 +94,7 @@ REACT_APP_API_URL=http://localhost:5001 # Use the host machine's localhost and b
 MYSQL_ROOT_PASSWORD=rootpassword # Choose a secure root password
 ```
 
-**AWS Credentials:** Ensure your AWS credentials are configured in the environment where you run `docker-compose up`. The backend service needs access to the S3 bucket specified in `backend/src/agent.py` and `backend/src/main.py` (currently `danieldoescode-s3`). Common methods include:
+**AWS Credentials:** Ensure your AWS credentials are configured in the environment where you run `docker-compose up`. The backend service needs access to the S3 bucket specified by the `S3_BUCKET_NAME` environment variable. Common methods include:
    - Configuring `~/.aws/credentials` and `~/.aws/config` files.
    - Setting AWS environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`).
    - If running on EC2, attaching an IAM role with S3 read permissions to the instance.
