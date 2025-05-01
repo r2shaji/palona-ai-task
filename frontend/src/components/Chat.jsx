@@ -204,14 +204,14 @@ const Chat = () => {
         const uniqueCategories = [...new Set(productCategories)];
         
         // Detect if this is a complementary product recommendation
-        const isComplementaryQuery = messageCopy.toLowerCase().includes("go with") || 
-                                     messageCopy.toLowerCase().includes("pair with") ||
-                                     messageCopy.toLowerCase().includes("match with") ||
-                                     messageCopy.toLowerCase().includes("wear with") ||
-                                     messageCopy.toLowerCase().includes("complement") ||
-                                     (uniqueCategories.length > 0 && 
-                                      !uniqueCategories.some(cat => 
-                                        messageCopy.toLowerCase().includes(cat.toLowerCase())));
+        const text = messageCopy.toLowerCase();
+        const triggers = ["go with","pair with","match with","wear with","complement"];
+
+        const isComplementaryQuery =
+          triggers.some(t => text.includes(t)) ||
+          (uniqueCategories.length > 0 &&
+            !uniqueCategories.some(cat => text.includes(cat.toLowerCase())));
+
         
         // If the response text is empty or very generic, enhance it
         if (!displayText || displayText === "Here are the products you requested:") {

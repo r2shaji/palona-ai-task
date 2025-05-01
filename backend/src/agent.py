@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from models import load_clip_model, extract_features_clip
 from utils import format_product_for_response
-from database import get_all_products, get_product_by_id, get_products_by_category, search_products_by_description, engine
+from database import get_all_products, get_product_by_id, get_products_by_category, search_products_by_description, engine, get_all_categories, get_top_products_by_category
 
 load_dotenv()
 
@@ -40,25 +40,16 @@ Always maintain a friendly, professional tone and prioritize clear, structured r
 IMPORTANT: When users ask you to show or recommend products, do NOT make up product descriptions. Instead, explain that you're searching our product catalog, and then let the system handle finding and displaying actual products from our database.
 """
 
-# --- Product Data Setup ---
-PRODUCT_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-PRODUCT_CATALOG = []
-
-
 # --- Image Feature Index (using CLIP) ---
 image_feature_index = None
 product_id_map = {}
 CLIP_FEATURE_DIMENSION = 768  
 
 def build_image_index():
-    """Builds the FAISS index for image features using CLIP."""
+    """Builds the FAISS index for image features using CLIP using top products from each category."""
     global image_feature_index, product_id_map
     
-    if not PRODUCT_CATALOG:
-        print("Cannot build image index: Product catalog is empty.")
-        return
-
-    print("Building image index with CLIP features...")
+    print("Building image index with CLIP features from database...")
     start_time = time.time()
     
     # Ensure CLIP model is loaded
@@ -66,26 +57,71 @@ def build_image_index():
     if model is None or processor is None:
         print("Cannot build image index: Failed to load CLIP model.")
         return
-
+    
+    # Get all categories from the database
+    categories = get_all_categories()
+    if not categories:
+        print("Cannot build image index: No categories found in database.")
+        return
+    
     features = []
     product_ids = []
+    products_processed = 0
     
-    for product in PRODUCT_CATALOG:
-        try:
-            img = Image.open(product["image_path"])
-            feature = extract_features_clip(img) # Use the function from models.py
-            if feature is not None:
-                features.append(feature)
-                product_ids.append(product["id"])
-            else:
-                print(f"Warning: Could not extract features for {product['image_filename']}")
-        except Exception as e:
-            print(f"Error processing image {product['image_filename']}: {e}")
-
+    # For each category, get the top 10 products
+    for category in categories:
+        category_name = category['name']
+        print(f"Processing top products from category: {category_name}")
+        
+        # Get top 10 products from this category
+        top_products = get_top_products_by_category(category_name, limit=10)
+        
+        for product in top_products:
+            try:
+                # Skip products without image URLs
+                if not product['image_url']:
+                    print(f"Warning: Product {product['product_id']} has no image.")
+                    continue
+                
+                # Use the requests library to get the image from the image_url
+                import requests
+                from io import BytesIO
+                
+                # Get the full image URL - prepend API base URL if needed
+                image_url = product['image_url']
+                # Note: You may need to adjust this depending on how your URLs are structured
+                if not image_url.startswith(('http://', 'https://')):
+                    # Get base URL from environment or use a default
+                    base_url = os.getenv("API_BASE_URL", "http://localhost:5001")
+                    image_url = f"{base_url}{image_url if image_url.startswith('/') else '/' + image_url}"
+                
+                try:
+                    response = requests.get(image_url, timeout=5)
+                    if not response.ok:
+                        print(f"Warning: Failed to fetch image from URL for product {product['product_id']}: {response.status_code}")
+                        continue
+                    
+                    # Create PIL Image from response content
+                    img = Image.open(BytesIO(response.content))
+                    feature = extract_features_clip(img)
+                    
+                    if feature is not None:
+                        features.append(feature)
+                        product_ids.append(product['product_id'])
+                        products_processed += 1
+                    else:
+                        print(f"Warning: Could not extract features for product {product['product_id']}")
+                except Exception as e:
+                    print(f"Error fetching image for product {product['product_id']}: {e}")
+                    continue
+                
+            except Exception as e:
+                print(f"Error processing product {product['product_id']}: {e}")
+    
     if not features:
         print("Cannot build image index: No features were extracted.")
         return
-
+    
     # Convert features to a numpy array
     features_np = np.array(features).astype("float32")
     
@@ -99,7 +135,7 @@ def build_image_index():
     product_id_map = {i: pid for i, pid in enumerate(product_ids)}
     
     end_time = time.time()
-    print(f"Image index built successfully with {len(product_ids)} items in {end_time - start_time:.2f} seconds.")
+    print(f"Image index built successfully with {len(product_ids)} products from {len(categories)} categories in {end_time - start_time:.2f} seconds.")
 
 class CommerceAgent:
     def __init__(self):
@@ -107,16 +143,19 @@ class CommerceAgent:
         if not self.openai_available:
             print("OpenAI API key not set. Chat functionality will be limited.")
         
-        # Try to get products from the database
-        self.use_database = False
+        # Always use database mode
+        self.use_database = True
         try:
             db_products = get_all_products()
-            if db_products:
-                print(f"Using MySQL database for product data. Found {len(db_products)} products.")
-                self.use_database = True
+            print(f"Using MySQL database for product data. Found {len(db_products)} products.")
+            
+            # Build the image index using database products
+            if image_feature_index is None:
+                print("Building image index for similar product search...")
+                build_image_index()
         except Exception as e:
-            print(f"Failed to connect to database: {e}")
-            print("Falling back to file-based product catalog.")
+            print(f"Error connecting to database: {e}")
+            # We don't have a fallback anymore - everything is database-based
 
     def chat(self, user_message):
         """Handles general conversation and product recommendations using OpenAI."""
@@ -748,53 +787,53 @@ class CommerceAgent:
         return formatted_products[:limit]  # Ensure we don't exceed the limit
         
     def _search_file_based(self, category, description, explicit_category_request, original_description):
-        """Search for products using file-based approach."""
-        print("Using file-based product search")
-        if not PRODUCT_CATALOG:
-            print("Product catalog is empty!")
-            return []
-
-        alternative_file_suggestion = explicit_category_request and description and category
-
-        # Use passed category/description for file search too
-        filtered_products = PRODUCT_CATALOG
+        """Simple fallback search method using database queries when regular search fails.
+        Simplified version that only uses the database."""
+        print("Using fallback database search method")
+        
+        # Try to get products by category first
         if category:
-            filtered_products = [p for p in filtered_products if category.lower() in p.get("category", "").lower()]
-
-        if description and not alternative_file_suggestion:
-             # Simple keyword matching for file-based description search
-             desc_keywords = description.lower().split()
-             desc_filtered = [p for p in filtered_products if all(kw in (p['name'].lower() + " " + p['description'].lower()) for kw in desc_keywords)]
-             
-             # If we found matches with the description, use them
-             if desc_filtered:
-                 filtered_products = desc_filtered
-             # Otherwise, if this was a specific query, keep the category-only results as alternatives
-             elif alternative_file_suggestion:
-                 print(f"No {description} {category} found in file-based search, suggesting alternatives")
-                 # Keep filtered_products as is - they're just the category matches
-
-        # Sort remaining products (by rating or original order)
-        if filtered_products:
-            sorted_products = sorted(filtered_products, key=lambda p: p.get("rating", 0), reverse=True)
-            formatted_results = [format_product_for_response(p) for p in sorted_products[:5]]
+            products = get_products_by_category(category)
             
-            # If we're showing alternative suggestions, add a note
-            if alternative_file_suggestion:
-                alternate_message = f"We don't have {original_description} {category} at the moment. Here are other {category} options you might like:"
+            # Filter by description if we have one
+            if description and products:
+                description_terms = description.lower().split()
+                filtered_products = []
+                
+                # Apply manual filtering
+                for product in products:
+                    product_text = (product['name'] + ' ' + product['description']).lower()
+                    # Product matches if all description terms are found in product text
+                    if all(term in product_text for term in description_terms):
+                        filtered_products.append(product)
+                
+                if filtered_products:
+                    print(f"Found {len(filtered_products)} products matching '{description}' in category '{category}'")
+                    formatted_results = self._format_products(filtered_products, limit=5)
+                    return formatted_results
+            
+            # If we have products for the category but no matches with description,
+            # show category products as alternatives if this was a specific request
+            if products and explicit_category_request and description:
+                print(f"No {description} {category} found, suggesting alternatives from category")
+                formatted_results = self._format_products(products, limit=5)
+                
+                # Add alternative message
                 if formatted_results:
-                    formatted_results[0]['alternate_message'] = alternate_message
-                    
-            return formatted_results
+                    formatted_results[0]['alternate_message'] = f"We don't have {original_description} {category} at the moment. Here are other {category} options you might like:"
+                
+                return formatted_results
             
-        elif explicit_category_request:
-            # Honor the explicit category request by returning empty results
+            # Return category products without any description filtering
+            if products:
+                return self._format_products(products, limit=5)
+        
+        # Honor explicit category requests by returning empty for no matches
+        if explicit_category_request:
             return []
-        else:
-             # Fallback to top-rated overall if filtering yields nothing
-             # but only for non-explicit category requests
-             sorted_products = sorted(PRODUCT_CATALOG, key=lambda p: p.get("rating", 0), reverse=True)
-             return [format_product_for_response(p) for p in sorted_products[:5]]
+            
+        # Final fallback - get popular products
+        return self._get_best_sellers()
 
     def recommend_products(self, query, category=None, description=None, check_only=False):
         """Recommends products based on a text query, potentially using pre-extracted category/description."""
@@ -897,6 +936,54 @@ class CommerceAgent:
             list: List of formatted product dictionaries with similarity scores
         """
         try:
+            # If we have a FAISS index built from the database, use it
+            if image_feature_index is not None and image_feature_index.ntotal > 0:
+                print("Using pre-built FAISS index for image search")
+                # Search the FAISS index
+                k = min(5, image_feature_index.ntotal)  # Number of nearest neighbors
+                query_feature_np = np.array([query_feature]).astype("float32")
+                
+                # Check if dimensions match
+                if query_feature_np.shape[1] != image_feature_index.d:
+                    print(f"Feature dimension mismatch: query has {query_feature_np.shape[1]}, index has {image_feature_index.d}")
+                    return [{"error": "Incompatible image feature dimensions."}]
+                    
+                distances, indices = image_feature_index.search(query_feature_np, k)
+                
+                results = []
+                for i, idx in enumerate(indices[0]):
+                    if idx != -1:  # FAISS returns -1 for invalid indices
+                        product_id = product_id_map.get(idx)
+                        if product_id is not None:
+                            # Get the product from database
+                            product = get_product_by_id(product_id)
+                            if product:
+                                # Add similarity score (inverse of distance)
+                                similarity = 1.0 / (1.0 + distances[0][i])
+                                formatted_product = {
+                                    "id": product['product_id'],
+                                    "name": product['name'],
+                                    "description": product['description'],
+                                    "price": float(product['price']),
+                                    "image_filename": os.path.basename(product['image_url']) if product['image_url'] else None,
+                                    "image_url": product['image_url'],
+                                    "rating": float(product['average_rating']),
+                                    "category": product['categories'][0]['name'] if product['categories'] else "Unknown",
+                                    "similarity_score": float(similarity)
+                                }
+                                results.append(formatted_product)
+                
+                # Filter by minimum similarity
+                results = [r for r in results if r.get("similarity_score", 0) >= 0.7]
+                # Sort by similarity (highest first)
+                results.sort(key=lambda x: x.get("similarity_score", 0), reverse=True)
+                
+                if not results:
+                    return [{"error": "No similar products found."}]
+                    
+                return results
+            
+            # Fallback method - direct comparison if index not available
             # Get all products from database
             db_products = get_all_products()
             
@@ -919,15 +1006,25 @@ class CommerceAgent:
                     continue
                     
                 try:
-                    # Get the product image path
-                    image_path = os.path.join(PRODUCT_DATA_DIR, os.path.basename(product['image_url']))
+                    # Use the requests library to get the image from the image_url
+                    import requests
+                    from io import BytesIO
                     
-                    # If the file doesn't exist, skip this product
-                    if not os.path.exists(image_path):
+                    # Get the full image URL - prepend API base URL if needed
+                    image_url = product['image_url']
+                    # Note: You may need to adjust this depending on how your URLs are structured
+                    if not image_url.startswith(('http://', 'https://')):
+                        # Get base URL from environment or use a default
+                        base_url = os.getenv("API_BASE_URL", "http://localhost:5000")
+                        image_url = f"{base_url}{image_url if image_url.startswith('/') else '/' + image_url}"
+                    
+                    response = requests.get(image_url, timeout=5)
+                    if not response.ok:
+                        print(f"Warning: Failed to fetch image from URL for product {product['product_id']}: {response.status_code}")
                         continue
-                        
-                    # Extract features from product image
-                    product_img = Image.open(image_path)
+                    
+                    # Create PIL Image from response content
+                    product_img = Image.open(BytesIO(response.content))
                     product_feature = extract_features_clip(product_img)
                     
                     if product_feature is not None:
@@ -992,7 +1089,7 @@ class CommerceAgent:
                 
                 # Check again if index was built successfully
                 if image_feature_index is None or image_feature_index.ntotal == 0:
-                    return [{"error": "Image search index could not be built. Please check your product catalog."}]
+                    return [{"error": "Image search index could not be built. Please check your product database."}]
 
             # Search the FAISS index
             k = 5  # Number of nearest neighbors to find
@@ -1010,13 +1107,22 @@ class CommerceAgent:
                 if idx != -1:  # FAISS returns -1 for invalid indices
                     product_id = product_id_map.get(idx)
                     if product_id is not None:
-                        # Find the product in the catalog
-                        product = next((p for p in PRODUCT_CATALOG if p["id"] == product_id), None)
+                        # Get the product from database
+                        product = get_product_by_id(product_id)
                         if product:
                             # Add similarity score (inverse of distance)
-                            product_with_score = format_product_for_response(product)
-                            product_with_score["similarity_score"] = float(1.0 / (1.0 + distances[0][i]))
-                            results.append(product_with_score)
+                            formatted_product = {
+                                "id": product['product_id'],
+                                "name": product['name'],
+                                "description": product['description'],
+                                "price": float(product['price']),
+                                "image_filename": os.path.basename(product['image_url']) if product['image_url'] else None,
+                                "image_url": product['image_url'],
+                                "rating": float(product['average_rating']),
+                                "category": product['categories'][0]['name'] if product['categories'] else "Unknown",
+                                "similarity_score": float(1.0 / (1.0 + distances[0][i]))
+                            }
+                            results.append(formatted_product)
             
             # Sort by similarity score (descending)
             print(f"Results before sorting: {results}")
@@ -1044,12 +1150,8 @@ class CommerceAgent:
             if query_feature is None:
                 return [{"error": "Failed to extract features from the uploaded image."}]
 
-            # If using database, query all products and compare them directly
-            if self.use_database:
-                return self._search_database_by_image(query_feature)
-            
-            # Fall back to file-based approach using FAISS index
-            return self._search_faiss_by_image(query_feature)
+            # Query all products and compare them directly using database
+            return self._search_database_by_image(query_feature)
 
         except Exception as e:
             print(f"Error during image search: {e}")
@@ -1057,32 +1159,27 @@ class CommerceAgent:
 
     def get_all_products(self):
         """Returns the entire product catalog, formatted for response."""
-        if self.use_database:
-            try:
-                # Get products from the database
-                db_products = get_all_products()
-                
-                # Format them similar to the file-based format
-                products = []
-                for product in db_products:
-                    formatted_product = {
-                        "id": product['product_id'],
-                        "name": product['name'],
-                        "description": product['description'],
-                        "price": float(product['price']),
-                        "image_filename": product['image_url'].split('/')[-1] if product['image_url'] else None,
-                        "image_url": product['image_url'],
-                        "rating": float(product['average_rating']),
-                        "category": product['categories'][0]['name'] if product['categories'] else "Unknown"
-                    }
-                    products.append(formatted_product)
-                    print(f"Formatted product: {formatted_product}")
-                return products
-            except Exception as e:
-                print(f"Error getting products from database: {e}")
-                # Fall back to file-based catalog
-                return [format_product_for_response(p) for p in PRODUCT_CATALOG]
-        else:
-            # Use file-based catalog
-            return [format_product_for_response(p) for p in PRODUCT_CATALOG]
+        try:
+            # Get products from the database
+            db_products = get_all_products()
+            
+            # Format them
+            products = []
+            for product in db_products:
+                formatted_product = {
+                    "id": product['product_id'],
+                    "name": product['name'],
+                    "description": product['description'],
+                    "price": float(product['price']),
+                    "image_filename": os.path.basename(product['image_url']) if product['image_url'] else None,
+                    "image_url": product['image_url'],
+                    "rating": float(product['average_rating']),
+                    "category": product['categories'][0]['name'] if product['categories'] else "Unknown"
+                }
+                products.append(formatted_product)
+                print(f"Formatted product: {formatted_product}")
+            return products
+        except Exception as e:
+            print(f"Error getting products from database: {e}")
+            return []
 

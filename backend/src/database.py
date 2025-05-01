@@ -353,3 +353,89 @@ def search_products_by_description(description, category_name=None, limit=5):
     except Exception as e:
         print(f"Error searching products by description: {e}")
         return []
+
+def get_all_categories():
+    """Get all product categories."""
+    try:
+        with engine.connect() as connection:
+            query = text("""
+            SELECT * FROM categories
+            ORDER BY name
+            """)
+            results = connection.execute(query).fetchall()
+            
+            if not results:
+                print("No categories found in database.")
+                return []
+                
+            return [dict(category._mapping) for category in results]
+            
+    except Exception as e:
+        print(f"Error getting all categories: {e}")
+        return []
+
+def get_top_products_by_category(category_name, limit=10):
+    """Get top rated products from a specific category.
+    
+    Args:
+        category_name (str): The category name
+        limit (int): Maximum number of products to return
+        
+    Returns:
+        list: List of product dictionaries
+    """
+    try:
+        with engine.connect() as connection:
+            # Query to get top products by category
+            query = text("""
+            SELECT p.*, b.name as brand_name, c.category_id, c.name as category_name
+            FROM products p
+            LEFT JOIN brands b ON p.brand_id = b.brand_id
+            JOIN product_categories pc ON p.product_id = pc.product_id
+            JOIN categories c ON pc.category_id = c.category_id
+            WHERE c.name = :category_name AND p.is_active = TRUE
+            ORDER BY p.average_rating DESC
+            LIMIT :limit
+            """)
+            results = connection.execute(query, {"category_name": category_name, "limit": limit}).fetchall()
+            
+            if not results:
+                print(f"No products found in category: {category_name}")
+                return []
+                
+            # Process results and group by product_id
+            product_map = {}
+            for row in results:
+                row_dict = dict(row._mapping)
+                product_id = row_dict['product_id']
+                
+                if product_id not in product_map:
+                    # Create new product entry
+                    product = {
+                        'product_id': product_id,
+                        'name': row_dict['name'],
+                        'description': row_dict['description'],
+                        'price': row_dict['price'],
+                        'image_url': row_dict['image_url'],
+                        'average_rating': row_dict['average_rating'],
+                        'is_active': row_dict['is_active'],
+                        'brand_name': row_dict['brand_name'],
+                        'categories': [{
+                            'category_id': row_dict['category_id'],
+                            'name': row_dict['category_name']
+                        }]
+                    }
+                    product_map[product_id] = product
+                else:
+                    # Add category to existing product
+                    product_map[product_id]['categories'].append({
+                        'category_id': row_dict['category_id'],
+                        'name': row_dict['category_name']
+                    })
+            
+            print(f"Found {len(product_map)} top products in category '{category_name}'")
+            return list(product_map.values())
+            
+    except Exception as e:
+        print(f"Error getting top products by category: {e}")
+        return []
