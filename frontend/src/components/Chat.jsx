@@ -1,6 +1,6 @@
 // frontend/src/components/Chat.jsx
 import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
-import { chatWithAgent, searchByImage, getAllProducts, API_URL } from '../api';
+import { chatWithAgent, searchByImage, getAllProducts, API_URL, checkHealth } from '../api';
 
 const processBoldText = (text) => {
   // Try a different approach - manually identify all bold sections
@@ -97,7 +97,7 @@ const Chat = () => {
   const typingTimeoutRef = useRef(null);
 
   // Add a timestamp to each message to ensure they're unique
-  const generateMsgId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const generateMsgId = () => `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
   useEffect(() => {
     const checkBackendConnection = async () => {
@@ -107,12 +107,12 @@ const Chat = () => {
       }
 
       try {
-        // Try to fetch products with a timeout
+        // Try to use health check endpoint with a timeout
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => reject(new Error('Connection timeout')), 5000);
         });
         
-        await Promise.race([getAllProducts(), timeoutPromise]);
+        await Promise.race([checkHealth(), timeoutPromise]);
         setBackendConnected(true);
       } catch (error) {
         console.error('Backend connection check failed:', error);

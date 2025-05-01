@@ -55,10 +55,10 @@ You can also initialize the database directly using:
 1. **Direct SQL execution**:
 ```bash
 # Run schema creation
-docker exec -i palona-mysql mysql -upalona -ppalonapassword palona_shop < backend/db/init/schema.sql
+docker exec -i palona-sql mysql -upalona -ppalonapassword palona_shop < backend/db/init/schema.sql
 
 # Run sample data insertion
-docker exec -i palona-mysql mysql -upalona -ppalonapassword palona_shop < backend/db/init/sample_data.sql
+docker exec -i palona-sql mysql -upalona -ppalonapassword palona_shop < backend/db/init/sample_data.sql
 ```
 
 2. **Using the dedicated shell script**:
@@ -100,7 +100,7 @@ docker ps
 
 ```bash
 # For MySQL
-docker logs palona-mysql
+docker logs palona-sql
 
 # For Backend
 docker logs palona-backend
@@ -109,7 +109,7 @@ docker logs palona-backend
 ### Accessing MySQL
 
 ```bash
-docker exec -it palona-mysql mysql -upalona -ppalonapassword palona_shop
+docker exec -it palona-sql mysql -upalona -ppalonapassword palona_shop
 ```
 
 ### Stopping Containers
@@ -159,7 +159,7 @@ To change these values, edit:
 ### Common Issues
 
 1. **MySQL container fails to start**
-   - Check logs: `docker logs palona-mysql`
+   - Check logs: `docker logs palona-sql`
    - Ensure port 3306 is available: `lsof -i :3306`
 
 2. **Backend can't connect to MySQL**
@@ -172,6 +172,6 @@ To change these values, edit:
    - Restart the service: `docker-compose restart backend`
    
 4. **Database initialization fails**
-   - Check MySQL container logs: `docker logs palona-mysql`
+   - Check MySQL container logs: `docker logs palona-sql`
    - Verify the SQL files in `backend/db/init/` are correctly formatted
    - Try running initialization manually with one of the alternative methods 

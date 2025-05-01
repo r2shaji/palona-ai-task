@@ -11,16 +11,16 @@ DB_NAME=${DB_NAME:-"palona_shop"}
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Check if using Docker
-if docker ps | grep -q palona-mysql; then
+if docker ps | grep -q palona-sql; then
     echo "MySQL Docker container detected. Using Docker for database initialization."
     
     # Create schema
     echo "Creating database schema..."
-    docker exec -i palona-mysql mysql -u$DB_USER -p$DB_PASSWORD $DB_NAME < "$SCRIPT_DIR/schema.sql"
+    docker exec -i palona-sql mysql -u$DB_USER -p$DB_PASSWORD $DB_NAME < "$SCRIPT_DIR/schema.sql"
     
     # Insert sample data
     echo "Inserting sample data..."
-    docker exec -i palona-mysql mysql -u$DB_USER -p$DB_PASSWORD $DB_NAME < "$SCRIPT_DIR/sample_data.sql"
+    docker exec -i palona-sql mysql -u$DB_USER -p$DB_PASSWORD $DB_NAME < "$SCRIPT_DIR/sample_data.sql"
 else
     # Using local MySQL
     echo "Using local MySQL for database initialization."

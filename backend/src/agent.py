@@ -1015,7 +1015,7 @@ class CommerceAgent:
                     # Note: You may need to adjust this depending on how your URLs are structured
                     if not image_url.startswith(('http://', 'https://')):
                         # Get base URL from environment or use a default
-                        base_url = os.getenv("API_BASE_URL", "http://localhost:5000")
+                        base_url = os.getenv("API_BASE_URL", "http://localhost:5001")
                         image_url = f"{base_url}{image_url if image_url.startswith('/') else '/' + image_url}"
                     
                     response = requests.get(image_url, timeout=5)

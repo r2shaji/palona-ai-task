@@ -153,7 +153,7 @@ The frontend will be available at http://localhost:3000.
 
 ```bash
 # Connect to the MySQL instance
-docker exec -it palona-mysql mysql -upalona -ppalonapassword
+docker exec -it palona-sql mysql -upalona -ppalonapassword
 
 # Select the database
 USE palona_shop;
@@ -180,7 +180,7 @@ If you encounter database connection issues:
 1. If using Docker:
    - Check if the container is running: `docker ps`
    - Restart the container: `docker-compose restart mysql`
-   - Check logs: `docker logs palona-mysql`
+   - Check logs: `docker logs palona-sql`
 
 2. If using local MySQL:
    - Verify that MySQL is running: `systemctl status mysql` or `mysql.server status`

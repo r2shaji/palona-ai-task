@@ -1,10 +1,30 @@
 // frontend/src/api.js
-export const API_URL = process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5001/api';
-
+export const API_URL = (process.env.REACT_APP_API_URL ? process.env.REACT_APP_API_URL + '/api' : 'http://localhost:5001/api')
+console.log("API_URL is:", API_URL, process.env.REACT_APP_API_URL );
 // Add this for debugging
 const logApiCall = (endpoint, success, data = null, error = null) => {
   console.log(`API ${endpoint} - ${success ? 'SUCCESS' : 'ERROR'}`, 
               success ? data : error);
+};
+
+export const checkHealth = async () => {
+  console.log(`Checking API health at ${API_URL}/health`);
+  try {
+    const response = await fetch(`${API_URL}/health`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`API Health Error (${response.status}): ${errorText}`);
+      throw new Error(`API health error: ${response.status} - ${errorText}`);
+    }
+    
+    const data = await response.json();
+    logApiCall('checkHealth', true, data);
+    return data;
+  } catch (error) {
+    logApiCall('checkHealth', false, null, error);
+    throw error;
+  }
 };
 
 export const chatWithAgent = async (message) => {

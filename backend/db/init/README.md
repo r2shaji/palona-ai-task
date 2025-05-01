@@ -23,8 +23,8 @@ This script will detect if you're using Docker or a local MySQL instance and run
 
 For Docker:
 ```bash
-docker exec -i palona-mysql mysql -upalona -ppalonapassword palona_shop < schema.sql
-docker exec -i palona-mysql mysql -upalona -ppalonapassword palona_shop < sample_data.sql
+docker exec -i palona-sql mysql -upalona -ppalonapassword palona_shop < schema.sql
+docker exec -i palona-sql mysql -upalona -ppalonapassword palona_shop < sample_data.sql
 ```
 
 For local MySQL:

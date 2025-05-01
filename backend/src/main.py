@@ -11,8 +11,11 @@ load_dotenv()
 from agent import CommerceAgent
 from database import get_all_products, get_product_by_id, get_products_by_category
 
-app = Flask(__name__, static_folder='../../frontend')
-CORS(app)  # Enable CORS for all routes
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}}, 
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]) # Enable CORS for all routes
 
 # Initialize the agent 
 agent = CommerceAgent()

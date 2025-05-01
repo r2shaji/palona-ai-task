@@ -3,7 +3,7 @@ version: '3.8'
 services:
   mysql:
     image: mysql:8.0
-    container_name: palona-mysql
+    container_name: palona-sql
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
@@ -25,9 +25,7 @@ services:
       retries: 5
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
+    image: palona-backend:latest
     container_name: palona-backend
     restart: always
     ports:
@@ -36,15 +34,26 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
-      - DB_HOST=mysql
-      - DB_PORT=3306
-      - DB_USER=palona
-      - DB_PASSWORD=palonapassword
-      - DB_NAME=palona_shop
-    volumes:
-      - ./backend/src:/app/src
-      - ./backend/db:/app/db
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-open-api-key-here}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: palona
+      DB_PASSWORD: palonapassword
+      DB_NAME: palona_shop
+      API_BASE_URL: http://localhost:5001
+    networks:
+      - palona-network
+      
+  frontend:
+    image: palona-frontend:latest
+    container_name: palona-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      REACT_APP_API_URL: http://54.234.186.113:5001
     networks:
       - palona-network
 
@@ -53,4 +62,4 @@ networks:
     driver: bridge
 
 volumes:
-  mysql_data: 
+  mysql_data:

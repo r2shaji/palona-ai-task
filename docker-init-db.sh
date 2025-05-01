@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Make sure MySQL is running
-if ! docker ps | grep palona-mysql > /dev/null; then
+if ! docker ps | grep palona-sql > /dev/null; then
   echo "MySQL container is not running. Starting it now..."
   docker-compose up -d mysql
   
@@ -11,12 +11,12 @@ if ! docker ps | grep palona-mysql > /dev/null; then
 fi
 
 # Check if the container is ready
-if ! docker exec palona-mysql mysql -upalona -ppalonapassword -e "SELECT 1;" > /dev/null 2>&1; then
+if ! docker exec palona-sql mysql -upalona -ppalonapassword -e "SELECT 1;" > /dev/null 2>&1; then
   echo "MySQL container is not ready yet. Waiting a bit longer..."
   sleep 10
   
   # Check again
-  if ! docker exec palona-mysql mysql -upalona -ppalonapassword -e "SELECT 1;" > /dev/null 2>&1; then
+  if ! docker exec palona-sql mysql -upalona -ppalonapassword -e "SELECT 1;" > /dev/null 2>&1; then
     echo "Error: MySQL container is not responding. Please check the logs."
     exit 1
   fi
@@ -41,15 +41,7 @@ if [[ "$method_choice" == "1" ]]; then
   export DB_PASSWORD=palonapassword
   export DB_NAME=palona_shop
   
-  # Run the Python script
-  if [ -f "backend/db/init/init_db.py" ]; then
-    python backend/db/init/init_db.py
-  else
-    echo "Error: init_db.py not found in backend/db/init."
-    exit 1
-  fi
-  
-elif [[ "$method_choice" == "2" ]]; then
+if [[ "$method_choice" == "2" ]]; then
   # SQL files method
   echo "Initializing database using SQL files directly..."
   
