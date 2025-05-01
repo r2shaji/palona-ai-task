@@ -3,6 +3,13 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS  # Make sure you have flask-cors installed
 from dotenv import load_dotenv
 import os
+from flask import Flask, Response, abort
+import boto3
+from botocore.exceptions import ClientError
+
+s3 = boto3.client('s3')           # picks up the EC2 role for creds
+BUCKET = 'danieldoescode-s3'
+PREFIX = 'palona/data/'
 
 # Load environment variables 
 load_dotenv()
@@ -78,11 +85,11 @@ def handle_image_search():
     
     return jsonify({'results': results})
 
-@app.route('/api/images/<filename>', methods=['GET'])
-def serve_product_image(filename):
-    # Define the path to the product images
-    product_data_dir = os.path.join(os.path.dirname(__file__), "data")
-    return send_from_directory(product_data_dir, filename)
+# @app.route('/api/images/<filename>', methods=['GET'])
+# def serve_product_image(filename):
+#     # Define the path to the product images
+#     product_data_dir = os.path.join(os.path.dirname(__file__), "data")
+#     return send_from_directory(product_data_dir, filename)
 
 @app.route('/api/products', methods=['GET'])
 def get_products():
@@ -126,6 +133,24 @@ def get_category_products(category_id):
     except Exception as e:
         print(f"Error getting category products: {e}")
         return jsonify({'error': str(e)}), 500
+    
+
+@app.route('/api/images/<filename>')
+def get_asset(filename):
+    key = f'{PREFIX}{filename}'
+    try:
+        obj = s3.get_object(Bucket=BUCKET, Key=key)
+        return Response(
+            obj['Body'].iter_chunks(8192),
+            content_type=obj['ContentType']
+        )
+    except ClientError as e:
+        code = e.response['Error']['Code']
+        if code in ('NoSuchKey', '404'):
+            return jsonify({'error': str(e)}), 404
+        else:
+            print(f"S3 error: {e}")
+            return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 # backend/src/agent.py
+from io import BytesIO
 import os
 import openai
 from dotenv import load_dotenv
@@ -11,6 +12,8 @@ from sqlalchemy import text
 from models import load_clip_model, extract_features_clip
 from utils import format_product_for_response
 from database import get_all_products, get_product_by_id, get_products_by_category, search_products_by_description, engine, get_all_categories, get_top_products_by_category
+import boto3
+from botocore.exceptions import ClientError
 
 load_dotenv()
 
@@ -20,6 +23,10 @@ if not OPENAI_API_KEY:
     print("Warning: OPENAI_API_KEY not found in environment variables.")
 else:
     openai.api_key = OPENAI_API_KEY
+
+s3 = boto3.client('s3')           # picks up the EC2 role for creds
+BUCKET = 'danieldoescode-s3'
+PREFIX = 'palona/data/'
 
 # --- OpenAI Model Configuration ---
 OPENAI_MODEL = "gpt-4"
@@ -82,13 +89,9 @@ def build_image_index():
                 if not product['image_url']:
                     print(f"Warning: Product {product['product_id']} has no image.")
                     continue
-                
-                # Use the requests library to get the image from the image_url
-                import requests
-                from io import BytesIO
-                
+
                 # Get the full image URL - prepend API base URL if needed
-                image_url = product['image_url']
+                image_url = "/api" + product['image_url']
                 # Note: You may need to adjust this depending on how your URLs are structured
                 if not image_url.startswith(('http://', 'https://')):
                     # Get base URL from environment or use a default
@@ -96,13 +99,8 @@ def build_image_index():
                     image_url = f"{base_url}{image_url if image_url.startswith('/') else '/' + image_url}"
                 
                 try:
-                    response = requests.get(image_url, timeout=5)
-                    if not response.ok:
-                        print(f"Warning: Failed to fetch image from URL for product {product['product_id']}: {response.status_code}")
-                        continue
                     
-                    # Create PIL Image from response content
-                    img = Image.open(BytesIO(response.content))
+                    img = fetch_image(product['image_url'].split("/")[-1])
                     feature = extract_features_clip(img)
                     
                     if feature is not None:
@@ -136,6 +134,10 @@ def build_image_index():
     
     end_time = time.time()
     print(f"Image index built successfully with {len(product_ids)} products from {len(categories)} categories in {end_time - start_time:.2f} seconds.")
+
+def fetch_image(filename):
+    obj = s3.get_object(Bucket=BUCKET, Key=f"{PREFIX}{filename}")
+    return Image.open(BytesIO(obj["Body"].read()))
 
 class CommerceAgent:
     def __init__(self):
@@ -1006,26 +1008,9 @@ class CommerceAgent:
                     continue
                     
                 try:
-                    # Use the requests library to get the image from the image_url
-                    import requests
-                    from io import BytesIO
                     
-                    # Get the full image URL - prepend API base URL if needed
-                    image_url = product['image_url']
-                    # Note: You may need to adjust this depending on how your URLs are structured
-                    if not image_url.startswith(('http://', 'https://')):
-                        # Get base URL from environment or use a default
-                        base_url = os.getenv("API_BASE_URL", "http://localhost:5001")
-                        image_url = f"{base_url}{image_url if image_url.startswith('/') else '/' + image_url}"
-                    
-                    response = requests.get(image_url, timeout=5)
-                    if not response.ok:
-                        print(f"Warning: Failed to fetch image from URL for product {product['product_id']}: {response.status_code}")
-                        continue
-                    
-                    # Create PIL Image from response content
-                    product_img = Image.open(BytesIO(response.content))
-                    product_feature = extract_features_clip(product_img)
+                    img = fetch_image(product['image_url'].split("/")[-1])
+                    product_feature = extract_features_clip(img)
                     
                     if product_feature is not None:
                         # Calculate similarity (using cosine similarity)
