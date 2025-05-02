@@ -5,7 +5,7 @@ An e-commerce platform with AI-powered product recommendations and search capabi
 ### Demo & Deployment
 
 - **Video Demo:**  
-  [![Watch the demo on YouTube](https://img.youtube.com/vi/OuVXvktlyk8/0.jpg)]([https://www.youtube.com/watch?v=OuVXvktlyk8])
+  [![Watch the demo on YouTube](https://img.youtube.com/vi/OuVXvktlyk8)]([https://www.youtube.com/watch?v=OuVXvktlyk8])
 
 - **Live Demo:** The application is currently hosted at [http://54.234.186.113:3000/](http://54.234.186.113:3000/)
 
